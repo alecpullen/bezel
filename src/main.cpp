@@ -208,7 +208,10 @@ void App::run() {
 void App::tick() {
     if (!ready_) return;
     for (auto& o : outputs_) {
-        if (o->panel) o->panel->render();
+        if (o->panel) {
+            o->panel->tick();
+            o->panel->render();
+        }
     }
 }
 

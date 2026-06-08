@@ -20,6 +20,7 @@ public:
     void render(const class Renderer& renderer) const override;
 
     void setDirty();
+    bool tick() const;
 
 private:
     const Theme& theme_;

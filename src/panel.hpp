@@ -12,6 +12,7 @@
 
 class Egl;
 class BatteryService;
+class Clock;
 
 class Panel {
 public:
@@ -21,6 +22,8 @@ public:
 
     void setScale(int scale);
     void render();
+    void tick();
+    void requestRedraw();
 
 private:
     void resize(int w, int h);
@@ -40,6 +43,8 @@ private:
     int                    height_ = HEIGHT;
     float                  scale_  = 1.0f;
     bool                   configured_ = false;
+    bool                   dirty_ = true;
+    Clock*                 clock_ = nullptr;
 
     std::unique_ptr<Renderer>  renderer_;
     std::unique_ptr<FontCache> fontCache_;

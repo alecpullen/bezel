@@ -79,3 +79,10 @@ void Clock::render(const class Renderer& renderer) const {
 void Clock::setDirty() {
     lastMinute_ = std::chrono::minutes(0);
 }
+
+bool Clock::tick() const {
+    auto now = std::chrono::system_clock::now();
+    auto thisMinute = std::chrono::duration_cast<std::chrono::minutes>(
+        now.time_since_epoch());
+    return thisMinute != lastMinute_;
+}

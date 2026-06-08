@@ -64,22 +64,38 @@ void Panel::resize(int w, int h) {
             if (batteryService_) {
                 auto battery = std::make_unique<BatteryWidget>(theme_, renderer_->ctx(), fontH >= 0 ? fontH : 0, *batteryService_);
                 battery->setCallback([this] {
-                    // Force render or tick handles it
+                    requestRedraw();
                 });
                 root_->addChild(std::move(battery));
             }
-            root_->addChild(std::make_unique<Clock>(theme_, renderer_->ctx(),
-                                                    fontH >= 0 ? fontH : 0));
+            auto clock = std::make_unique<Clock>(theme_, renderer_->ctx(),
+                                                 fontH >= 0 ? fontH : 0);
+            clock_ = clock.get();
+            root_->addChild(std::move(clock));
         }
     } else {
         wl_egl_window_resize(egl_window_, width_, height_, 0, 0);
     }
     configured_ = true;
+    dirty_ = true;
+}
+
+void Panel::tick() {
+    if (clock_ && clock_->tick()) {
+        dirty_ = true;
+    }
+}
+
+void Panel::requestRedraw() {
+    dirty_ = true;
 }
 
 void Panel::render() {
     if (!configured_) return;
     if (!renderer_ || !root_) return;
+    if (!dirty_) return;
+
+    dirty_ = false;
 
     renderer_->beginFrame(width_, height_);
     renderer_->clear();
