@@ -24,7 +24,7 @@ bool BatteryService::init() {
                                                             .onInterface("org.freedesktop.UPower.Device"));
 
         if (!isPresent || type == 0) {
-            std::printf("BatteryService: No display battery device present (fallback type %u).\n", type);
+            std::printf("BatteryService: No display battery device present (type %u).\n", type);
             return false;
         }
 
@@ -72,7 +72,7 @@ void BatteryService::updateFromProperties(const std::map<sdbus::PropertyName, sd
     static const sdbus::PropertyName keyPercentage{"Percentage"};
     static const sdbus::PropertyName keyState{"State"};
     static const sdbus::PropertyName keyTimeToEmpty{"TimeToEmpty"};
-    static const sdbus::PropertyName keyTimeToFull{"TimeToFull"};
+    static const sdbus::PropertyName keyStateFull{"TimeToFull"};
 
     if (properties.count(keyPercentage)) {
         double pct = static_cast<double>(properties.at(keyPercentage));
@@ -105,8 +105,8 @@ void BatteryService::updateFromProperties(const std::map<sdbus::PropertyName, sd
         }
     }
 
-    if (properties.count(keyTimeToFull)) {
-        int64_t t = static_cast<int64_t>(properties.at(keyTimeToFull));
+    if (properties.count(keyStateFull)) {
+        int64_t t = static_cast<int64_t>(properties.at(keyStateFull));
         int newT = static_cast<int>(t);
         if (newT != current_.timeToFull) {
             current_.timeToFull = newT;

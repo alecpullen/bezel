@@ -41,6 +41,23 @@ int FontCache::loadSans() {
             int id = load(c.name, c.path);
             if (id >= 0) {
                 uiSans_ = id;
+
+                // Load a Nerd Font as fallback if present
+                static const Candidate nerdCandidates[] = {
+                    {"nerd-icons", "TTF/MesloLGSNerdFont-Regular.ttf"},
+                    {"nerd-icons", "TTF/FantasqueSansMNerdFont-Regular.ttf"},
+                };
+                for (const auto& nc : nerdCandidates) {
+                    std::string nfull = std::string(fontDir_) + "/" + nc.path;
+                    if (fileExists(nfull.c_str())) {
+                        int nid = load(nc.name, nc.path);
+                        if (nid >= 0) {
+                            nvgAddFallbackFontId(ctx_, uiSans_, nid);
+                            break;
+                        }
+                    }
+                }
+
                 return id;
             }
         }

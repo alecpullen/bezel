@@ -14,6 +14,7 @@
 #include "theme.hpp"
 #include "renderer.hpp"
 #include "font_cache.hpp"
+#include "battery_service.hpp"
 
 struct Output {
     wl_output* wl       = nullptr;
@@ -57,13 +58,14 @@ class App {
         bool                 ready_       = false;
         bool                 running_     = true;
         std::unique_ptr<sdbus::IConnection> dbusConn_;
+        std::unique_ptr<BatteryService> batteryService_;
 
         void tick();
 };
 
 void App::create_panel(Output& o) {
     if (!compositor_ || !layer_shell_) return;
-    o.panel = std::make_unique<Panel>(theme_, egl_, compositor_, layer_shell_, o.wl, o.name[0] ? o.name : "panel");
+    o.panel = std::make_unique<Panel>(theme_, egl_, compositor_, layer_shell_, o.wl, o.name[0] ? o.name : "panel", batteryService_.get());
     o.panel->setScale(o.scale);
 }
 
@@ -115,6 +117,10 @@ bool App::init() {
 
     try {
         dbusConn_ = sdbus::createSystemBusConnection();
+        batteryService_ = std::make_unique<BatteryService>(*dbusConn_);
+        if (!batteryService_->init()) {
+            batteryService_.reset();
+        }
     } catch (const sdbus::Error& e) {
         fprintf(stderr, "Warning: Failed to connect to D-Bus system bus: %s\n", e.what());
     }
@@ -171,6 +177,9 @@ void App::run() {
             }
             
             dbusConn_->processPendingEvent();
+            if (batteryService_) {
+                batteryService_->tick();
+            }
         } else {
             struct pollfd fds[1] = {{wlFd, POLLIN, 0}};
             int ret = poll(fds, 1, 1000);

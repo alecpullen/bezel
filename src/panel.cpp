@@ -2,12 +2,14 @@
 #include "panel.hpp"
 #include "egl.hpp"
 #include "clock.hpp"
+#include "battery_service.hpp"
+#include "battery_widget.hpp"
 #include <wayland-client-protocol.h>
 #include <wayland-egl-core.h>
 #include <cstdio>
 
-Panel::Panel(Theme& theme, Egl& egl, wl_compositor* compositor, zwlr_layer_shell_v1* shell, wl_output* output, const char* name)
-    : egl_(egl), theme_(theme) {
+Panel::Panel(Theme& theme, Egl& egl, wl_compositor* compositor, zwlr_layer_shell_v1* shell, wl_output* output, const char* name, BatteryService* batteryService)
+    : egl_(egl), theme_(theme), batteryService_(batteryService) {
     surface_ = wl_compositor_create_surface(compositor);
     layer_surface_ = zwlr_layer_shell_v1_get_layer_surface(shell, surface_, output, ZWLR_LAYER_SHELL_V1_LAYER_TOP, name);
 
@@ -59,6 +61,13 @@ void Panel::resize(int w, int h) {
             root_ = std::make_unique<BoxLayout>(BoxOrientation::Horizontal,
                                                 theme_.gapItem, theme_.panelPad);
             root_->addSpacer();
+            if (batteryService_) {
+                auto battery = std::make_unique<BatteryWidget>(theme_, renderer_->ctx(), fontH >= 0 ? fontH : 0, *batteryService_);
+                battery->setCallback([this] {
+                    // Force render or tick handles it
+                });
+                root_->addChild(std::move(battery));
+            }
             root_->addChild(std::make_unique<Clock>(theme_, renderer_->ctx(),
                                                     fontH >= 0 ? fontH : 0));
         }
