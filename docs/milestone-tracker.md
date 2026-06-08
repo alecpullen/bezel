@@ -279,13 +279,13 @@ M1 (Foundation) ──── DONE
 
 #### 4.3 Workspace service + MangoWC IPC
 
-- [ ] Create `WorkspaceService : public Service`:
+- [x] Create `WorkspaceService : public Service`:
   - Bind `ext_workspace_manager_v1` from registry if available
   - Fall back: connect to MangoWC custom IPC (Unix socket or D-Bus, TBD once MangoWC IPC is defined)
   - For MangoWC IPC path: query workspace list, window geometry per workspace, active workspace
   - Exposes `std::vector<WorkspaceInfo>` with per-workspace window rects
   - `WorkspaceInfo` struct: `name`/`index`, `active` (bool), `tiles: vector<Rect>` (proportional coordinates for tiling map rendering)
-- [ ] **Risk:** MangoWC IPC details unknown. If no IPC is available, fall back to `flat-icons` mode (workspace indices only, extracted from ext-workspace protocol or compositor globals). **Do not block M4 on MangoWC IPC — ship with flat-icons first, upgrade to tiling maps when IPC is available.**
+- [x] **Risk:** MangoWC IPC details unknown. If no IPC is available, fall back to `flat-icons` mode (workspace indices only, extracted from ext-workspace protocol or compositor globals). **Do not block M4 on MangoWC IPC — ship with flat-icons first, upgrade to tiling maps when IPC is available.**
 
 #### 4.4 Workspace switcher widget
 

@@ -16,6 +16,7 @@
 #include "font_cache.hpp"
 #include "battery_service.hpp"
 #include "toplevel_service.hpp"
+#include "workspace_service.hpp"
 
 struct Output {
     wl_output* wl       = nullptr;
@@ -54,6 +55,7 @@ class App {
         wl_compositor*       compositor_  = nullptr;
         zwlr_layer_shell_v1* layer_shell_ = nullptr;
         zwlr_foreign_toplevel_manager_v1* toplevel_manager_ = nullptr;
+        zdwl_ipc_manager_v2* dwl_ipc_manager_ = nullptr;
         Egl                  egl_;
         Theme                theme_ = Theme::defaultTheme();
         std::vector<std::unique_ptr<Output>> outputs_;
@@ -62,6 +64,7 @@ class App {
         std::unique_ptr<sdbus::IConnection> dbusConn_;
         std::unique_ptr<BatteryService> batteryService_;
         std::unique_ptr<ToplevelService> toplevelService_;
+        std::unique_ptr<WorkspaceService> workspaceService_;
 
         void tick();
 };
@@ -80,6 +83,8 @@ void App::reg_global(void* data, wl_registry* r, uint32_t name, const char* ifac
         self->layer_shell_ = (zwlr_layer_shell_v1*)wl_registry_bind(r, name, &zwlr_layer_shell_v1_interface, 1);
     } else if (strcmp(iface, zwlr_foreign_toplevel_manager_v1_interface.name) == 0) {
         self->toplevel_manager_ = (zwlr_foreign_toplevel_manager_v1*)wl_registry_bind(r, name, &zwlr_foreign_toplevel_manager_v1_interface, 3);
+    } else if (strcmp(iface, zdwl_ipc_manager_v2_interface.name) == 0) {
+        self->dwl_ipc_manager_ = (zdwl_ipc_manager_v2*)wl_registry_bind(r, name, &zdwl_ipc_manager_v2_interface, 2);
     } else if (strcmp(iface, wl_output_interface.name) == 0) {
         uint32_t v = version < 4 ? version : 4;
         auto o = std::make_unique<Output>();
@@ -90,6 +95,9 @@ void App::reg_global(void* data, wl_registry* r, uint32_t name, const char* ifac
             .scale = out_scale, .name = out_name, .description = out_description,
         };
         wl_output_add_listener(o->wl, &listener, o.get());
+        if (self->workspaceService_) {
+            self->workspaceService_->add_output(o->wl);
+        }
         self->outputs_.push_back(std::move(o));
         if (self->ready_) self->create_panel(*self->outputs_.back());
     }
@@ -135,7 +143,16 @@ bool App::init() {
         toplevelService_->init();
     }
 
+    if (dwl_ipc_manager_) {
+        workspaceService_ = std::make_unique<WorkspaceService>(dwl_ipc_manager_);
+        workspaceService_->init();
+        for (auto& o : outputs_) {
+            workspaceService_->add_output(o->wl);
+        }
+    }
+
     for (auto& o : outputs_) create_panel(*o);
+    wl_display_roundtrip(display_);
     ready_ = true;
     return true;
 }
@@ -193,6 +210,9 @@ void App::run() {
             if (toplevelService_) {
                 toplevelService_->tick();
             }
+            if (workspaceService_) {
+                workspaceService_->tick();
+            }
         } else {
             struct pollfd fds[1] = {{wlFd, POLLIN, 0}};
             int ret = poll(fds, 1, 1000);
@@ -211,6 +231,9 @@ void App::run() {
 
             if (toplevelService_) {
                 toplevelService_->tick();
+            }
+            if (workspaceService_) {
+                workspaceService_->tick();
             }
         }
         
@@ -235,6 +258,7 @@ void App::tick() {
 void App::finish() {
     outputs_.clear();
     toplevelService_.reset();
+    workspaceService_.reset();
     if (layer_shell_) zwlr_layer_shell_v1_destroy(layer_shell_);
     if (compositor_) wl_compositor_destroy(compositor_);
     egl_.finish();
