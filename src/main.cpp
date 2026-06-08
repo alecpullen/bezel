@@ -7,6 +7,7 @@
 #include <vector>
 #include <poll.h>
 #include <wayland-client-protocol.h>
+#include <sdbus-c++/sdbus-c++.h>
 #include "egl.hpp"
 #include "panel.hpp"
 #include "protocol.hpp"
@@ -55,6 +56,7 @@ class App {
         std::vector<std::unique_ptr<Output>> outputs_;
         bool                 ready_       = false;
         bool                 running_     = true;
+        std::unique_ptr<sdbus::IConnection> dbusConn_;
 
         void tick();
 };
@@ -111,6 +113,12 @@ bool App::init() {
     }
     if (!egl_.init(display_)) return false;
 
+    try {
+        dbusConn_ = sdbus::createSystemBusConnection();
+    } catch (const sdbus::Error& e) {
+        fprintf(stderr, "Warning: Failed to connect to D-Bus system bus: %s\n", e.what());
+    }
+
     for (auto& o : outputs_) create_panel(*o);
     ready_ = true;
     return true;
@@ -133,19 +141,51 @@ void App::run() {
         wl_display_flush(display_);
         
         int wlFd = wl_display_get_fd(display_);
-        struct pollfd fds[1] = {{wlFd, POLLIN, 0}};
-        int ret = poll(fds, 1, 1000); // 1s timeout
         
-        if (ret > 0) {
-            if (fds[0].revents & POLLIN) {
-                if (wl_display_read_events(display_) < 0) {
-                    break;
+        if (dbusConn_) {
+            auto dbusPoll = dbusConn_->getEventLoopPollData();
+            int dbusTimeout = dbusPoll.getPollTimeout();
+            int timeout = 1000; // 1s timeout for Clock minute-tick
+            if (dbusTimeout >= 0 && dbusTimeout < timeout) {
+                timeout = dbusTimeout;
+            }
+            
+            struct pollfd fds[3] = {
+                { wlFd, POLLIN, 0 },
+                { dbusPoll.fd, dbusPoll.events, 0 },
+                { dbusPoll.eventFd, POLLIN, 0 }
+            };
+            
+            int ret = poll(fds, 3, timeout);
+            
+            if (ret > 0) {
+                if (fds[0].revents & POLLIN) {
+                    if (wl_display_read_events(display_) < 0) {
+                        break;
+                    }
+                } else {
+                    wl_display_cancel_read(display_);
                 }
             } else {
                 wl_display_cancel_read(display_);
             }
+            
+            dbusConn_->processPendingEvent();
         } else {
-            wl_display_cancel_read(display_);
+            struct pollfd fds[1] = {{wlFd, POLLIN, 0}};
+            int ret = poll(fds, 1, 1000);
+            
+            if (ret > 0) {
+                if (fds[0].revents & POLLIN) {
+                    if (wl_display_read_events(display_) < 0) {
+                        break;
+                    }
+                } else {
+                    wl_display_cancel_read(display_);
+                }
+            } else {
+                wl_display_cancel_read(display_);
+            }
         }
         
         if (wl_display_dispatch_pending(display_) < 0) {
