@@ -71,7 +71,7 @@ class App {
 
 void App::create_panel(Output& o) {
     if (!compositor_ || !layer_shell_) return;
-    o.panel = std::make_unique<Panel>(theme_, egl_, compositor_, layer_shell_, o.wl, o.name[0] ? o.name : "panel", batteryService_.get(), workspaceService_.get());
+    o.panel = std::make_unique<Panel>(theme_, egl_, compositor_, layer_shell_, o.wl, o.name[0] ? o.name : "panel", batteryService_.get(), toplevelService_.get(), workspaceService_.get());
     o.panel->setScale(o.scale);
 }
 
@@ -83,6 +83,8 @@ void App::reg_global(void* data, wl_registry* r, uint32_t name, const char* ifac
         self->layer_shell_ = (zwlr_layer_shell_v1*)wl_registry_bind(r, name, &zwlr_layer_shell_v1_interface, 1);
     } else if (strcmp(iface, zwlr_foreign_toplevel_manager_v1_interface.name) == 0) {
         self->toplevel_manager_ = (zwlr_foreign_toplevel_manager_v1*)wl_registry_bind(r, name, &zwlr_foreign_toplevel_manager_v1_interface, 3);
+        self->toplevelService_ = std::make_unique<ToplevelService>(self->toplevel_manager_);
+        self->toplevelService_->init();
     } else if (strcmp(iface, zdwl_ipc_manager_v2_interface.name) == 0) {
         self->dwl_ipc_manager_ = (zdwl_ipc_manager_v2*)wl_registry_bind(r, name, &zdwl_ipc_manager_v2_interface, 2);
         self->workspaceService_ = std::make_unique<WorkspaceService>(self->dwl_ipc_manager_);
@@ -140,11 +142,6 @@ bool App::init() {
         }
     } catch (const sdbus::Error& e) {
         fprintf(stderr, "Warning: Failed to connect to D-Bus system bus: %s\n", e.what());
-    }
-
-    if (toplevel_manager_) {
-        toplevelService_ = std::make_unique<ToplevelService>(toplevel_manager_);
-        toplevelService_->init();
     }
 
     for (auto& o : outputs_) create_panel(*o);

@@ -4,13 +4,15 @@
 #include "clock.hpp"
 #include "battery_service.hpp"
 #include "battery_widget.hpp"
+#include "toplevel_service.hpp"
+#include "window_list.hpp"
 #include "workspace_switcher.hpp"
 #include <wayland-client-protocol.h>
 #include <wayland-egl-core.h>
 #include <cstdio>
 
-Panel::Panel(Theme& theme, Egl& egl, wl_compositor* compositor, zwlr_layer_shell_v1* shell, wl_output* output, const char* name, BatteryService* batteryService, WorkspaceService* workspaceService)
-    : egl_(egl), theme_(theme), output_(output), batteryService_(batteryService), workspaceService_(workspaceService) {
+Panel::Panel(Theme& theme, Egl& egl, wl_compositor* compositor, zwlr_layer_shell_v1* shell, wl_output* output, const char* name, BatteryService* batteryService, ToplevelService* toplevelService, WorkspaceService* workspaceService)
+    : egl_(egl), theme_(theme), output_(output), batteryService_(batteryService), toplevelService_(toplevelService), workspaceService_(workspaceService) {
     surface_ = wl_compositor_create_surface(compositor);
     layer_surface_ = zwlr_layer_shell_v1_get_layer_surface(shell, surface_, output, ZWLR_LAYER_SHELL_V1_LAYER_TOP, name);
 
@@ -74,7 +76,14 @@ void Panel::resize(int w, int h) {
                 switcher->setCallback([this] { requestRedraw(); });
                 root_->addChild(std::move(switcher));
             }
-            root_->addSpacer();
+            if (toplevelService_) {
+                auto wl = std::make_unique<WindowList>(theme_, fontH >= 0 ? fontH : 0,
+                                                       renderer_->ctx(), output_, *toplevelService_);
+                wl->setCallback([this] { requestRedraw(); });
+                root_->addChild(std::move(wl), 1.0f);
+            } else {
+                root_->addSpacer();
+            }
             if (batteryService_) {
                 auto battery = std::make_unique<BatteryWidget>(theme_, renderer_->ctx(), fontH >= 0 ? fontH : 0, *batteryService_);
                 battery->setCallback([this] {

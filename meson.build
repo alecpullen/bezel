@@ -12,7 +12,12 @@ scanner   = find_program('wayland-scanner')
 sdbus_cpp = dependency('sdbus-c++')
 freetype  = dependency('freetype2', required : false)
 harfbuzz  = dependency('harfbuzz', required : false)
+librsvg   = dependency('librsvg-2.0', required : false)
 nanovg    = subproject('nanovg').get_variable('nanovg_dep')
+
+if librsvg.found()
+  add_project_arguments('-DHAVE_LIBRSVG', language : 'cpp')
+endif
 
 wl_protos_dir = wl_protos.get_variable(pkgconfig : 'pkgdatadir')
 
@@ -42,8 +47,9 @@ executable('myshell',
             'src/renderer.cpp', 'src/font_cache.cpp', 'src/clock.cpp',
             'src/layout.cpp', 'src/label.cpp', 'src/battery_service.cpp',
             'src/toplevel_service.cpp', 'src/workspace_service.cpp',
-            'src/workspace_switcher.cpp', 'src/battery_widget.cpp',
+            'src/workspace_switcher.cpp', 'src/window_list.cpp',
+            'src/icon_loader.cpp', 'src/battery_widget.cpp',
             'src/nanovg_shim.cpp', gen],
            dependencies : [wl_client, wl_egl, egl, glesv2,
-                            freetype, harfbuzz, nanovg, sdbus_cpp],
+                            freetype, harfbuzz, nanovg, sdbus_cpp, librsvg],
            install : true)
