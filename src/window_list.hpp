@@ -16,12 +16,13 @@ public:
 
     void setCallback(std::function<void()> cb);
 
-    int  preferredWidth()  const override { return 0; }
+    int  preferredWidth()  const override;
     int  preferredHeight() const override { return (int)theme_.tileSizeHorizontal; }
     void layout(int x, int y, int w, int h) override { x_ = x; y_ = y; w_ = w; h_ = h; }
     void render(const Renderer& renderer) const override;
 
 private:
+    std::vector<const ToplevelInfo*> visibleToplevels() const;
     void drawButton(NVGcontext* vg, float btnX, float btnW,
                     const ToplevelInfo& info) const;
     void drawEllipsized(NVGcontext* vg, float x, float y, float maxW,

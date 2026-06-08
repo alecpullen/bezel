@@ -80,10 +80,9 @@ void Panel::resize(int w, int h) {
                 auto wl = std::make_unique<WindowList>(theme_, fontH >= 0 ? fontH : 0,
                                                        renderer_->ctx(), output_, *toplevelService_);
                 wl->setCallback([this] { requestRedraw(); });
-                root_->addChild(std::move(wl), 1.0f);
-            } else {
-                root_->addSpacer();
+                root_->addChild(std::move(wl));
             }
+            root_->addSpacer();
             if (batteryService_) {
                 auto battery = std::make_unique<BatteryWidget>(theme_, renderer_->ctx(), fontH >= 0 ? fontH : 0, *batteryService_);
                 battery->setCallback([this] {

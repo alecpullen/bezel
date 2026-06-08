@@ -26,7 +26,7 @@ void WindowList::setCallback(std::function<void()> cb) {
     callback_ = std::move(cb);
 }
 
-void WindowList::render(const Renderer& renderer) const {
+std::vector<const ToplevelInfo*> WindowList::visibleToplevels() const {
     std::vector<const ToplevelInfo*> visible;
     for (const auto& t : service_.toplevels()) {
         if (t->is_closed()) continue;
@@ -35,6 +35,27 @@ void WindowList::render(const Renderer& renderer) const {
         if (!info.outputs.empty() && !info.is_on_output(output_)) continue;
         visible.push_back(&info);
     }
+    return visible;
+}
+
+int WindowList::preferredWidth() const {
+    auto visible = visibleToplevels();
+    if (visible.empty()) return 0;
+
+    int count = (int)visible.size();
+    static constexpr int MIN_BTN_W = 60;
+    static constexpr int MAX_BTN_W = 200;
+    static constexpr int ABSOLUTE_MAX_VISIBLE = 20;
+
+    int maxVisible = std::min(ABSOLUTE_MAX_VISIBLE, std::max(1, w_ / MIN_BTN_W));
+    count = std::min(count, maxVisible);
+
+    float btnW = std::min((float)w_ / (float)count, (float)MAX_BTN_W);
+    return static_cast<int>(count * btnW);
+}
+
+void WindowList::render(const Renderer& renderer) const {
+    auto visible = visibleToplevels();
     if (visible.empty() || w_ <= 0) return;
 
     int count = (int)visible.size();
