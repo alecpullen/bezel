@@ -1,0 +1,3 @@
+[submodule "/home/alec/Projects/myshell/subprojects/nanovg"]
+	path = /home/alec/Projects/myshell/subprojects/nanovg
+	url = https://github.com/memononen/nanovg.git
