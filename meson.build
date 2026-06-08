@@ -9,6 +9,10 @@ glesv2    = dependency('glesv2')
 wl_protos = dependency('wayland-protocols')
 scanner   = find_program('wayland-scanner')
 
+freetype  = dependency('freetype2', required : false)
+harfbuzz  = dependency('harfbuzz', required : false)
+nanovg    = subproject('nanovg').get_variable('nanovg_dep')
+
 wl_protos_dir = wl_protos.get_variable(pkgconfig : 'pkgdatadir')
 
 # [xml path, output basename]
@@ -29,6 +33,10 @@ foreach p : protocols
 endforeach
 
 executable('myshell',
-           ['src/main.cpp', 'src/egl.cpp', 'src/panel.cpp', gen],
-           dependencies : [wl_client, wl_egl, egl, glesv2],
+           ['src/main.cpp', 'src/egl.cpp', 'src/panel.cpp',
+            'src/renderer.cpp', 'src/font_cache.cpp', 'src/clock.cpp',
+            'src/layout.cpp', 'src/label.cpp',
+            'src/nanovg_shim.cpp', gen],
+           dependencies : [wl_client, wl_egl, egl, glesv2,
+                            freetype, harfbuzz, nanovg],
            install : true)

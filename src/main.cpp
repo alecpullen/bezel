@@ -9,6 +9,9 @@
 #include "egl.hpp"
 #include "panel.hpp"
 #include "protocol.hpp"
+#include "theme.hpp"
+#include "renderer.hpp"
+#include "font_cache.hpp"
 
 struct Output {
     wl_output* wl       = nullptr;
@@ -47,13 +50,15 @@ class App {
         wl_compositor*       compositor_  = nullptr;
         zwlr_layer_shell_v1* layer_shell_ = nullptr;
         Egl                  egl_;
+        Theme                theme_ = Theme::defaultTheme();
         std::vector<std::unique_ptr<Output>> outputs_;
         bool                 ready_       = false;
 };
 
 void App::create_panel(Output& o) {
     if (!compositor_ || !layer_shell_) return;
-    o.panel = std::make_unique<Panel>(egl_, compositor_, layer_shell_, o.wl, o.name[0] ? o.name : "panel");
+    o.panel = std::make_unique<Panel>(theme_, egl_, compositor_, layer_shell_, o.wl, o.name[0] ? o.name : "panel");
+    o.panel->setScale(o.scale);
 }
 
 void App::reg_global(void* data, wl_registry* r, uint32_t name, const char* iface, uint32_t version) {
