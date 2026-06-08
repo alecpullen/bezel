@@ -19,10 +19,10 @@ public:
     ~Panel();
 
     void setScale(int scale);
+    void render();
 
 private:
     void resize(int w, int h);
-    void render();
 
     static void handle_configure(void* data, zwlr_layer_surface_v1* s,
                                  uint32_t serial, uint32_t w, uint32_t h);

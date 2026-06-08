@@ -28,7 +28,7 @@ private:
     int fontHandle_;
     float fontSize_ = 12.0f;
     NVGcolor color_;
-    int align_ = 0;
+    int align_ = NVG_ALIGN_LEFT | NVG_ALIGN_TOP;
     std::string text_;
     int prefW_ = 0;
     int prefH_ = 0;

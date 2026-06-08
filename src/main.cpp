@@ -5,6 +5,7 @@
 #include <memory>
 #include <sys/types.h>
 #include <vector>
+#include <poll.h>
 #include <wayland-client-protocol.h>
 #include "egl.hpp"
 #include "panel.hpp"
@@ -53,6 +54,9 @@ class App {
         Theme                theme_ = Theme::defaultTheme();
         std::vector<std::unique_ptr<Output>> outputs_;
         bool                 ready_       = false;
+        bool                 running_     = true;
+
+        void tick();
 };
 
 void App::create_panel(Output& o) {
@@ -112,7 +116,52 @@ bool App::init() {
     return true;
 }
 
-void App::run() { while (wl_display_dispatch(display_) != -1) {} }
+void App::run() {
+    wl_display_flush(display_);
+    
+    while (running_) {
+        if (wl_display_get_error(display_)) {
+            break;
+        }
+        while (wl_display_prepare_read(display_) != 0) {
+            if (wl_display_dispatch_pending(display_) < 0) {
+                running_ = false;
+                break;
+            }
+        }
+        if (!running_) break;
+        wl_display_flush(display_);
+        
+        int wlFd = wl_display_get_fd(display_);
+        struct pollfd fds[1] = {{wlFd, POLLIN, 0}};
+        int ret = poll(fds, 1, 1000); // 1s timeout
+        
+        if (ret > 0) {
+            if (fds[0].revents & POLLIN) {
+                if (wl_display_read_events(display_) < 0) {
+                    break;
+                }
+            } else {
+                wl_display_cancel_read(display_);
+            }
+        } else {
+            wl_display_cancel_read(display_);
+        }
+        
+        if (wl_display_dispatch_pending(display_) < 0) {
+            break;
+        }
+        
+        tick();
+    }
+}
+
+void App::tick() {
+    if (!ready_) return;
+    for (auto& o : outputs_) {
+        if (o->panel) o->panel->render();
+    }
+}
 
 void App::finish() {
     outputs_.clear();

@@ -27,6 +27,9 @@ struct Theme {
     float labelPrimaryPx;
     float labelSecondaryPx;
     float largeClockPx;
+    float minFontSize;
+    int regularWeight;
+    int activeWeight;
 
     float radiusTile;
     float radiusControl;
@@ -75,6 +78,9 @@ struct Theme {
             .labelPrimaryPx    = 12.0f,
             .labelSecondaryPx  = 11.0f,
             .largeClockPx      = 22.0f,
+            .minFontSize       = 11.0f,
+            .regularWeight     = 400,
+            .activeWeight      = 500,
 
             .radiusTile        = 8.0f,
             .radiusControl     = 10.0f,

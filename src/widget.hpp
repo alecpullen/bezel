@@ -13,6 +13,7 @@ public:
     virtual int preferredHeight() const = 0;
     virtual void layout(int x, int y, int w, int h) = 0;
     virtual void render(const Renderer& renderer) const = 0;
+    virtual bool hit_test(int, int) const { return false; }
 
     int width() const { return w_; }
     int height() const { return h_; }

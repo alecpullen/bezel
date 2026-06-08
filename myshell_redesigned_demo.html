@@ -1,0 +1,3255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>myshell – Interactive Protocol & Shell Demo</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    /* ----------------------------------------------------
+       GLOBAL TOKENS & SYSTEM THEME (Tokyo Night / Nocturne)
+       ---------------------------------------------------- */
+    :root {
+      /* Nocturne Dark Theme (Default) */
+      --panel-bg: #16161e;
+      --panel-bg-elevated: rgba(192, 202, 245, 0.07);
+      --desktop-bg: #1a1b26;
+      --text-primary: #c0caf5;
+      --text-secondary: #a9b1d6;
+      --text-muted: #565f89;
+      --accent: #7aa2f7;
+      --accent-tint: rgba(122, 162, 247, 0.16);
+      --border-hairline: rgba(192, 202, 245, 0.08);
+      --border-emphasis: rgba(192, 202, 245, 0.14);
+      --border-accent: rgba(122, 162, 247, 0.40);
+
+      /* Semantic App Colors */
+      --green: #9ece6a;
+      --cyan: #7dcfff;
+      --magenta: #bb9af7;
+      --yellow: #e0af68;
+      --red: #f7768e;
+
+      /* Typography */
+      --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+      --font-mono: 'Fira Code', monospace;
+
+      /* Geometry */
+      --radius-tile: 8px;
+      --radius-control: 10px;
+      --radius-window: 12px;
+      --panel-h-height: 48px;
+      --panel-h-height-command: 62px;
+      --panel-v-width-compact: 56px;
+      --panel-v-width-expanded: 240px;
+
+      /* Insets (updated by JS based on top/bottom panel anchor) */
+      --desktop-inset-top: 0px;
+      --desktop-inset-bottom: var(--panel-h-height);
+      --desktop-inset-left: 0px;
+    }
+
+    :root.light-theme {
+      /* Nocturne Light Variant */
+      --panel-bg: #e1e2e7;
+      --panel-bg-elevated: rgba(55, 60, 85, 0.08);
+      --desktop-bg: #d5d6db;
+      --text-primary: #373c55;
+      --text-secondary: #444b6a;
+      --text-muted: #787c99;
+      --accent: #385caa;
+      --accent-tint: rgba(56, 92, 170, 0.12);
+      --border-hairline: rgba(55, 60, 85, 0.10);
+      --border-emphasis: rgba(55, 60, 85, 0.16);
+      --border-accent: rgba(56, 92, 170, 0.45);
+
+      --green: #4f8020;
+      --cyan: #007080;
+      --magenta: #7030a0;
+      --yellow: #805000;
+      --red: #a02030;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      margin: 0;
+      font-family: var(--font-sans);
+      background: #0d0f17;
+      color: var(--text-primary);
+      height: 100vh;
+      overflow: hidden;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    /* ----------------------------------------------------
+       DESKTOP ENVIRONMENT BACKGROUND
+       ---------------------------------------------------- */
+    .desktop {
+      height: 100%;
+      width: 100%;
+      background: 
+        radial-gradient(circle at 15% 15%, rgba(122, 162, 247, 0.12), transparent 45%),
+        radial-gradient(circle at 85% 75%, rgba(187, 154, 247, 0.10), transparent 45%),
+        var(--desktop-bg);
+      position: relative;
+      overflow: hidden;
+      transition: background 0.3s;
+    }
+
+    /* ----------------------------------------------------
+       SIMULATOR CONTROLS (Floating Debug Panel)
+       ---------------------------------------------------- */
+    .sim-panel {
+      position: absolute;
+      top: 16px;
+      right: 16px;
+      width: 280px;
+      background: rgba(22, 22, 30, 0.85);
+      backdrop-filter: blur(20px);
+      border: 1px solid var(--border-emphasis);
+      border-radius: var(--radius-window);
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+      z-index: 1000;
+      font-size: 12px;
+      overflow: hidden;
+      transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.3s;
+    }
+    .sim-panel.collapsed {
+      transform: translateY(-80%) scale(0.9);
+      opacity: 0.15;
+    }
+    .sim-panel.collapsed:hover {
+      transform: translateY(0) scale(1);
+      opacity: 1;
+    }
+    .sim-header {
+      background: var(--panel-bg-elevated);
+      padding: 10px 14px;
+      font-weight: 600;
+      border-bottom: 1px solid var(--border-hairline);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      cursor: pointer;
+    }
+    .sim-body {
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .sim-section-title {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      margin-bottom: 4px;
+    }
+    .sim-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 6px;
+    }
+    .sim-btn {
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid var(--border-hairline);
+      color: var(--text-primary);
+      padding: 6px 10px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-family: var(--font-sans);
+      font-size: 11px;
+      transition: background 0.2s, border-color 0.2s;
+      text-align: left;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .sim-btn:hover {
+      background: var(--panel-bg-elevated);
+      border-color: var(--accent);
+    }
+    .sim-btn.active {
+      background: var(--accent-tint);
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    /* ----------------------------------------------------
+       WINDOWS CONTAINER (Live Tiling / Floating Desktop)
+       ---------------------------------------------------- */
+    .windows-container {
+      position: absolute;
+      top: var(--desktop-inset-top);
+      bottom: var(--desktop-inset-bottom);
+      left: var(--desktop-inset-left);
+      right: 0;
+      transition: top 0.3s, bottom 0.3s, left 0.3s;
+      padding: 8px;
+    }
+
+    /* ----------------------------------------------------
+       MOCK WINDOW FRAME
+       ---------------------------------------------------- */
+    .mock-window {
+      position: absolute;
+      background: rgba(36, 40, 59, 0.85);
+      backdrop-filter: blur(20px);
+      border: 1px solid var(--border-emphasis);
+      border-radius: var(--radius-window);
+      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.25);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      z-index: 10;
+      /* Smooth window movement transitions (disabled dynamically during drag/resize) */
+      transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), 
+                  opacity 0.3s cubic-bezier(0.16, 1, 0.3, 1), 
+                  width 0.3s cubic-bezier(0.16, 1, 0.3, 1), 
+                  height 0.3s cubic-bezier(0.16, 1, 0.3, 1),
+                  left 0.3s cubic-bezier(0.16, 1, 0.3, 1), 
+                  top 0.3s cubic-bezier(0.16, 1, 0.3, 1),
+                  box-shadow 0.2s, border-color 0.2s;
+    }
+    :root.light-theme .mock-window {
+      background: rgba(240, 241, 244, 0.85);
+    }
+    .mock-window.focused {
+      border-color: var(--border-accent);
+      box-shadow: 0 15px 45px rgba(122, 162, 247, 0.15), 0 10px 30px rgba(0, 0, 0, 0.35);
+      z-index: 50;
+    }
+    .mock-window.hidden {
+      transform: scale(0.95);
+      opacity: 0;
+      pointer-events: none;
+    }
+    .mock-window.maximized {
+      border-radius: 0 !important;
+      border: none !important;
+    }
+
+    /* Window Header */
+    .window-header {
+      background: var(--panel-bg-elevated);
+      height: 34px;
+      padding: 0 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--border-hairline);
+      cursor: grab;
+    }
+    .mock-window.maximized .window-header {
+      cursor: default;
+    }
+    .window-header:active {
+      cursor: grabbing;
+    }
+    .mock-window.maximized .window-header:active {
+      cursor: default;
+    }
+    .win-title-container {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--text-secondary);
+      pointer-events: none;
+    }
+    .win-icon {
+      font-size: 14px;
+    }
+    .win-controls {
+      display: flex;
+      gap: 6px;
+    }
+    .win-btn {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      border: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 8px;
+      color: transparent;
+      transition: color 0.15s;
+    }
+    .window-header:hover .win-btn {
+      color: rgba(0, 0, 0, 0.5);
+    }
+    .win-close { background: var(--red); }
+    .win-min { background: var(--yellow); }
+    .win-max { background: var(--green); }
+
+    /* Window Body */
+    .window-content {
+      flex: 1;
+      position: relative;
+      overflow: hidden;
+    }
+
+    /* Resize Handle */
+    .resize-handle {
+      position: absolute;
+      bottom: 0;
+      right: 0;
+      width: 14px;
+      height: 14px;
+      cursor: se-resize;
+      z-index: 100;
+    }
+    .mock-window.maximized .resize-handle {
+      display: none;
+    }
+
+    /* ----------------------------------------------------
+       DESIGN 1 — UNIFIED HORIZONTAL PANEL
+       ---------------------------------------------------- */
+    .panelH {
+      position: absolute;
+      left: 0;
+      right: 0;
+      height: var(--panel-h-height);
+      background: rgba(22, 22, 30, 0.85);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      display: flex;
+      align-items: center;
+      padding: 0 14px;
+      gap: 14px;
+      z-index: 900;
+      box-shadow: 0 -5px 20px rgba(0, 0, 0, 0.15);
+      transition: height 0.3s cubic-bezier(0.16, 1, 0.3, 1), bottom 0.3s, top 0.3s;
+    }
+    .panelH.anchor-bottom {
+      bottom: 0;
+      top: auto;
+      border-top: 1px solid var(--border-emphasis);
+      border-bottom: none;
+    }
+    .panelH.anchor-top {
+      top: 0;
+      bottom: auto;
+      border-bottom: 1px solid var(--border-emphasis);
+      border-top: none;
+      box-shadow: 0 5px 20px rgba(0, 0, 0, 0.15);
+    }
+
+    /* Command Mode State (Grows Panel) */
+    .panelH.command {
+      height: var(--panel-h-height-command);
+      border-color: var(--border-accent);
+    }
+
+    /* Launcher Button */
+    .launcher {
+      width: 34px;
+      height: 34px;
+      border-radius: var(--radius-tile);
+      background: var(--accent-tint);
+      border: 1px solid var(--border-accent);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--accent);
+      font-size: 16px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: background 0.2s, transform 0.2s;
+    }
+    .launcher:hover {
+      background: var(--accent);
+      color: var(--panel-bg);
+      transform: scale(1.05);
+    }
+    .launcher:active {
+      transform: scale(0.95);
+    }
+
+    /* Workspace switcher (Tiling maps) */
+    .maps {
+      display: flex;
+      gap: 8px;
+    }
+    .map {
+      width: var(--workspace-map);
+      height: 26px;
+      border-radius: 5px;
+      border: 1px solid var(--border-hairline);
+      position: relative;
+      overflow: hidden;
+      background: rgba(255, 255, 255, 0.01);
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+    }
+    .map:hover {
+      background: rgba(255, 255, 255, 0.03);
+      border-color: var(--text-muted);
+    }
+    .map.active {
+      border-color: var(--accent);
+      background: var(--accent-tint);
+    }
+    .mini-win {
+      position: absolute;
+      background: var(--text-muted);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 2px;
+      opacity: 0.6;
+      transition: background 0.2s, opacity 0.2s;
+    }
+    .mini-win.active {
+      background: var(--accent);
+      opacity: 0.95;
+    }
+
+    /* Window list / Tasks */
+    .tasks {
+      display: flex;
+      gap: 6px;
+      overflow: hidden;
+    }
+    .task {
+      height: 34px;
+      padding: 0 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      border-radius: var(--radius-tile);
+      background: transparent;
+      border: 1px solid transparent;
+      color: var(--text-secondary);
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.2s, border-color 0.2s, color 0.2s;
+    }
+    .task:hover {
+      background: var(--panel-bg-elevated);
+      color: var(--text-primary);
+    }
+    .task.active {
+      background: var(--panel-bg-elevated);
+      border-color: var(--border-emphasis);
+      color: var(--text-primary);
+      box-shadow: inset 0 -2px 0 var(--accent);
+    }
+    .task.minimized {
+      opacity: 0.5;
+    }
+
+    /* Space filler */
+    .spacer {
+      flex: 1;
+    }
+
+    /* Tray Icons */
+    .tray {
+      display: flex;
+      gap: 14px;
+      color: var(--text-secondary);
+      font-size: 14px;
+      cursor: pointer;
+      padding: 6px 10px;
+      border-radius: var(--radius-tile);
+      transition: background 0.2s;
+    }
+    .tray:hover {
+      background: var(--panel-bg-elevated);
+    }
+
+    /* Clock */
+    .clock {
+      text-align: right;
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--text-primary);
+      cursor: pointer;
+      padding: 4px 8px;
+      border-radius: var(--radius-tile);
+      transition: background 0.2s;
+    }
+    .clock:hover {
+      background: var(--panel-bg-elevated);
+    }
+    .clock .date {
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-top: 1px;
+    }
+
+    /* ----------------------------------------------------
+       COMMAND MODE LAUNCHER SYSTEM
+       ---------------------------------------------------- */
+    .search {
+      height: 38px;
+      width: 200px;
+      border-radius: var(--radius-control);
+      border: 1px solid var(--border-emphasis);
+      background: rgba(32, 34, 49, 0.7);
+      color: var(--text-primary);
+      padding: 0 14px;
+      font-family: var(--font-sans);
+      font-size: 12px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    .search:focus {
+      border-color: var(--accent);
+    }
+
+    /* ----------------------------------------------------
+       LAUNCHER STYLE: INLINE SPOTLIGHT HYBRID LAUNCHER
+       ---------------------------------------------------- */
+    /* Compact command state (inline, height matches normal panel: 48px) */
+    .panelH.command-inline {
+      height: var(--panel-h-height); /* 48px */
+      border-color: var(--border-accent);
+    }
+    .panelH.command-inline .maps,
+    .panelH.command-inline .tasks,
+    .panelH.command-inline .launcher,
+    .panelH.command-inline .spacer,
+    .panelH.command-inline .tray,
+    .panelH.command-inline .clock {
+      display: none;
+    }
+    .panelH.command-inline .hybrid-panel-area {
+      display: flex;
+      flex-direction: row;
+      align-items: center;
+      gap: 12px;
+      height: 100%;
+      padding: 0;
+    }
+    .panelH.command-inline .hybrid-panel-body {
+      display: none !important; /* Hide results and preview pane when in compact mode! */
+    }
+
+    /* Expanded command state (grows height to 280px) */
+    .panelH.command-hybrid {
+      height: 280px;
+      border-color: var(--border-accent);
+    }
+    .panelH.command-hybrid .maps,
+    .panelH.command-hybrid .tasks,
+    .panelH.command-hybrid .launcher,
+    .panelH.command-hybrid .spacer,
+    .panelH.command-hybrid .tray,
+    .panelH.command-hybrid .clock {
+      display: none;
+    }
+    .panelH.command-hybrid .hybrid-panel-area {
+      display: flex;
+      flex-direction: column;
+      padding: 4px 0;
+      gap: 10px;
+    }
+    .panelH.command-hybrid.anchor-bottom .hybrid-panel-area {
+      flex-direction: column-reverse;
+    }
+    .panelH.command-hybrid.anchor-top .hybrid-panel-area {
+      flex-direction: column;
+    }
+
+    .hybrid-panel-area {
+      display: none;
+      width: 100%;
+      height: 100%;
+      box-sizing: border-box;
+    }
+
+    /* --- Dynamic Slider Input Row (Compact Mode) --- */
+    .panelH.command-inline #hybrid-search-row {
+      width: 400px;
+      flex-shrink: 0;
+      border-right: 1px solid var(--border-hairline);
+      padding-right: 12px;
+      transition: width 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .panelH.command-inline #hybrid-search-row:has(#hybrid-search-input:not(:placeholder-shown)) {
+      width: 220px;
+    }
+
+    /* Common input row style */
+    .hybrid-search-row {
+      display: flex;
+      align-items: center;
+      background: rgba(0, 0, 0, 0.2);
+      border: 1px solid var(--border-hairline);
+      border-radius: var(--radius-tile);
+      padding: 0 14px;
+      height: 40px;
+      gap: 10px;
+      flex-shrink: 0;
+      width: 100%;
+      box-sizing: border-box;
+    }
+    .hybrid-search-row:focus-within {
+      border-color: var(--border-accent);
+      background: rgba(0, 0, 0, 0.3);
+    }
+    
+    /* When expanded, the input row goes full-width and hides right border */
+    .panelH.command-hybrid #hybrid-search-row {
+      width: 100% !important;
+      border-right: none !important;
+      padding-right: 14px !important;
+      background: rgba(0, 0, 0, 0.2) !important;
+      border: 1px solid var(--border-hairline) !important;
+    }
+
+    .hybrid-search-icon {
+      font-size: 18px;
+      color: var(--text-muted);
+    }
+    #hybrid-search-input {
+      flex: 1;
+      background: transparent;
+      border: none;
+      outline: none;
+      color: var(--text-primary);
+      font-size: 13px;
+      font-family: var(--font-sans);
+    }
+
+    /* --- Horizontal Results --- */
+    .hybrid-horizontal-results {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      overflow-x: auto;
+      flex: 1;
+      height: 100%;
+      scrollbar-width: none;
+      padding-left: 6px;
+    }
+    .hybrid-horizontal-results::-webkit-scrollbar {
+      display: none;
+    }
+    .panelH.command-hybrid .hybrid-horizontal-results {
+      display: none !important;
+    }
+    .result-item-h {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 0 10px;
+      height: 28px;
+      border-radius: 6px;
+      cursor: pointer;
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid var(--border-hairline);
+      color: var(--text-secondary);
+      font-size: 11px;
+      white-space: nowrap;
+      transition: background 0.15s, border-color 0.15s, color 0.15s;
+      flex-shrink: 0;
+    }
+    .result-item-h:hover {
+      background: var(--panel-bg-elevated);
+      color: var(--text-primary);
+    }
+    .result-item-h.sel {
+      background: var(--accent-tint);
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+    .result-item-h .icon {
+      font-size: 13px;
+    }
+    .result-item-h .name {
+      font-weight: 500;
+    }
+    .result-item-h .type {
+      font-size: 9px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      margin-left: 4px;
+    }
+
+    /* --- Expanded Layout --- */
+    .hybrid-panel-body {
+      display: flex;
+      flex: 1;
+      gap: 16px;
+      min-height: 0;
+      width: 100%;
+    }
+    .hybrid-panel-list {
+      width: 280px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      padding-right: 6px;
+      flex-shrink: 0;
+    }
+    .hybrid-panel-preview {
+      flex: 1;
+      background: rgba(0, 0, 0, 0.15);
+      border: 1px solid var(--border-hairline);
+      border-radius: var(--radius-tile);
+      padding: 16px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      color: var(--text-secondary);
+      font-size: 11px;
+    }
+
+    /* Custom Webkit Scrollbars styling */
+    .hybrid-panel-list::-webkit-scrollbar,
+    .hybrid-panel-preview::-webkit-scrollbar {
+      width: 6px;
+    }
+    .hybrid-panel-list::-webkit-scrollbar-track,
+    .hybrid-panel-preview::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    .hybrid-panel-list::-webkit-scrollbar-thumb,
+    .hybrid-panel-preview::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.15);
+      border-radius: 3px;
+    }
+    .hybrid-panel-list::-webkit-scrollbar-thumb:hover,
+    .hybrid-panel-preview::-webkit-scrollbar-thumb:hover {
+      background: rgba(255, 255, 255, 0.25);
+    }
+    .hybrid-item-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 12px;
+      border-radius: var(--radius-tile);
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .hybrid-item-row.sel {
+      background: var(--accent-tint);
+      color: var(--accent);
+    }
+    .hybrid-item-row .icon {
+      font-size: 15px;
+      margin-right: 8px;
+    }
+    .hybrid-item-row .name {
+      font-size: 12px;
+      font-weight: 500;
+    }
+
+    /* ----------------------------------------------------
+       DESIGN 2 — UNIFIED VERTICAL PANEL
+       ---------------------------------------------------- */
+    .panelV {
+      position: absolute;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: var(--panel-v-width-compact);
+      background: rgba(22, 22, 30, 0.88);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border-right: 1px solid var(--border-emphasis);
+      z-index: 900;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 14px 8px;
+      gap: 16px;
+      transition: width 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    /* Expanded Morphing Mode */
+    .panelV.expanded {
+      width: var(--panel-v-width-expanded);
+      align-items: stretch;
+      padding: 16px 14px;
+    }
+
+    /* Launcher morph adjustments */
+    .panelV .launcher {
+      width: 40px;
+      height: 40px;
+      align-self: center;
+    }
+
+    /* Vertical Items List */
+    .v-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      width: 100%;
+    }
+    .v-item {
+      height: 40px;
+      border-radius: var(--radius-tile);
+      display: flex;
+      align-items: center;
+      padding: 0 10px;
+      cursor: pointer;
+      color: var(--text-secondary);
+      transition: background 0.2s, color 0.2s;
+      position: relative;
+    }
+    .v-item:hover {
+      background: var(--panel-bg-elevated);
+      color: var(--text-primary);
+    }
+    .v-item.active {
+      background: var(--panel-bg-elevated);
+      color: var(--text-primary);
+    }
+    /* Running active indicator pip (left edge) */
+    .v-item.active::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      top: 12px;
+      bottom: 12px;
+      width: 3px;
+      background: var(--accent);
+      border-radius: 0 2px 2px 0;
+    }
+    .panelV.expanded .v-item.active::before {
+      top: 8px;
+      bottom: 8px;
+    }
+    .v-item-icon {
+      font-size: 18px;
+      width: 24px;
+      display: flex;
+      justify-content: center;
+    }
+    .v-item-label {
+      display: none;
+      margin-left: 12px;
+      font-size: 12px;
+      font-weight: 500;
+    }
+    .panelV.expanded .v-item-label {
+      display: block;
+    }
+
+    /* Vertical Search Box */
+    .v-search-container {
+      display: none;
+      margin-bottom: 8px;
+    }
+    .panelV.expanded .v-search-container {
+      display: block;
+    }
+    .v-search {
+      width: 100%;
+      height: 34px;
+      border-radius: 8px;
+      border: 1px solid var(--border-emphasis);
+      background: rgba(32, 34, 49, 0.7);
+      color: var(--text-primary);
+      padding: 0 10px;
+      font-size: 12px;
+      outline: none;
+    }
+    .v-search:focus {
+      border-color: var(--accent);
+    }
+
+    /* Vertical Workspace switcher (expanded pips) */
+    .v-ws-pips {
+      display: none;
+      gap: 6px;
+      margin-bottom: 8px;
+      justify-content: space-between;
+    }
+    .panelV.expanded .v-ws-pips {
+      display: flex;
+    }
+    .v-ws-pip {
+      flex: 1;
+      height: 6px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--border-hairline);
+      border-radius: 3px;
+      cursor: pointer;
+      transition: background 0.2s, border-color 0.2s;
+    }
+    .v-ws-pip.active {
+      background: var(--accent);
+      border-color: var(--accent);
+    }
+
+    /* Clock container at bottom */
+    .v-clock {
+      margin-top: auto;
+      text-align: center;
+      cursor: pointer;
+    }
+    .panelV.expanded .v-clock {
+      text-align: left;
+      padding-top: 14px;
+      border-top: 1px solid var(--border-hairline);
+    }
+    .v-clock-time {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+    .panelV.expanded .v-clock-time {
+      font-size: 22px;
+      font-weight: 500;
+    }
+    .v-clock-date {
+      display: none;
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+    .panelV.expanded .v-clock-date {
+      display: block;
+    }
+
+    /* Vertical Tray */
+    .v-tray {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      color: var(--text-secondary);
+      font-size: 14px;
+      align-items: center;
+      cursor: pointer;
+    }
+    .panelV.expanded .v-tray {
+      flex-direction: row;
+      justify-content: space-around;
+      width: 100%;
+      background: var(--panel-bg-elevated);
+      padding: 8px;
+      border-radius: var(--radius-tile);
+      margin-bottom: 8px;
+    }
+
+    /* ----------------------------------------------------
+       QUICK SETTINGS POPUP
+       ---------------------------------------------------- */
+    .quick-settings {
+      position: absolute;
+      width: 300px;
+      background: rgba(22, 22, 30, 0.85);
+      backdrop-filter: blur(25px);
+      -webkit-backdrop-filter: blur(25px);
+      border: 1px solid var(--border-emphasis);
+      border-radius: var(--radius-window);
+      box-shadow: 0 15px 40px rgba(0, 0, 0, 0.45);
+      z-index: 950;
+      padding: 16px;
+      display: none;
+      flex-direction: column;
+      gap: 14px;
+      animation: slideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    @keyframes slideUp {
+      from { transform: translateY(10px); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+    .qs-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--border-hairline);
+    }
+    .qs-avatar {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--accent), var(--magenta));
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      color: #0d0f17;
+      font-size: 14px;
+    }
+    .qs-userinfo {
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .qs-userinfo .host {
+      font-size: 10px;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+    .qs-toggles {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 8px;
+    }
+    .qs-toggle-btn {
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid var(--border-hairline);
+      color: var(--text-secondary);
+      padding: 8px;
+      border-radius: var(--radius-tile);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 11px;
+      font-weight: 500;
+      transition: background 0.2s, border-color 0.2s, color 0.2s;
+    }
+    .qs-toggle-btn:hover {
+      background: var(--panel-bg-elevated);
+      color: var(--text-primary);
+    }
+    .qs-toggle-btn.active {
+      background: var(--accent-tint);
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+    .qs-sliders {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .qs-slider-group {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .qs-slider-label {
+      display: flex;
+      justify-content: space-between;
+      font-size: 10px;
+      color: var(--text-secondary);
+      font-weight: 600;
+    }
+    .qs-slider-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .qs-slider-icon {
+      font-size: 14px;
+      width: 18px;
+      text-align: center;
+    }
+    .qs-slider {
+      flex: 1;
+      height: 4px;
+      border-radius: 2px;
+      -webkit-appearance: none;
+      background: rgba(255, 255, 255, 0.1);
+      outline: none;
+      cursor: pointer;
+    }
+    .qs-slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: var(--accent);
+      cursor: pointer;
+      transition: transform 0.1s;
+    }
+    .qs-slider::-webkit-slider-thumb:hover {
+      transform: scale(1.2);
+    }
+    .qs-footer {
+      font-size: 10px;
+      color: var(--text-muted);
+      display: flex;
+      justify-content: space-between;
+      border-top: 1px solid var(--border-hairline);
+      padding-top: 8px;
+    }
+
+    /* ----------------------------------------------------
+       EGL CENTER HUD / OSD OVERLAY
+       ---------------------------------------------------- */
+    .osd-overlay {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%) scale(0.95);
+      width: 130px;
+      height: 130px;
+      background: rgba(22, 22, 30, 0.85);
+      backdrop-filter: blur(25px);
+      -webkit-backdrop-filter: blur(25px);
+      border: 1px solid var(--border-emphasis);
+      border-radius: 18px;
+      box-shadow: 0 15px 40px rgba(0, 0, 0, 0.4);
+      z-index: 1100;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      opacity: 0;
+      pointer-events: none;
+      transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.2s;
+    }
+    .osd-overlay.visible {
+      transform: translate(-50%, -50%) scale(1);
+      opacity: 1;
+    }
+    .osd-icon {
+      font-size: 36px;
+      color: var(--text-primary);
+    }
+    .osd-bar-container {
+      width: 80px;
+      height: 4px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 2px;
+      position: relative;
+    }
+    .osd-bar-fill {
+      position: absolute;
+      left: 0;
+      top: 0;
+      height: 100%;
+      background: var(--accent);
+      border-radius: 2px;
+      width: 75%;
+    }
+
+    /* ----------------------------------------------------
+       NOTIFICATIONS SYSTEM
+       ---------------------------------------------------- */
+    .notification-container {
+      position: absolute;
+      width: 320px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      z-index: 1050;
+      pointer-events: none;
+      transition: bottom 0.3s, left 0.3s, right 0.3s;
+    }
+    .notification-container.pos-br {
+      bottom: calc(var(--panel-h-height) + 12px);
+      right: 16px;
+    }
+    .notification-container.pos-tr {
+      top: calc(var(--panel-h-height) + 12px);
+      right: 16px;
+    }
+    .notification-container.pos-bl {
+      bottom: 16px;
+      left: calc(var(--panel-v-width-compact) + 16px);
+    }
+
+    .toast {
+      background: rgba(22, 22, 30, 0.85);
+      backdrop-filter: blur(25px);
+      -webkit-backdrop-filter: blur(25px);
+      border: 1px solid var(--border-emphasis);
+      border-radius: var(--radius-window);
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+      padding: 12px;
+      display: flex;
+      gap: 12px;
+      pointer-events: auto;
+      cursor: pointer;
+      transform: translateX(120%);
+      opacity: 0;
+      transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.3s, height 0.3s;
+      overflow: hidden;
+      max-height: 70px; /* Resting compact height */
+    }
+    .notification-container.pos-bl .toast {
+      transform: translateX(-120%);
+    }
+    .toast.visible {
+      transform: translateX(0);
+      opacity: 1;
+    }
+    /* Expanded Toast on Hover */
+    .toast:hover {
+      max-height: 200px;
+      border-color: var(--border-accent);
+    }
+    .toast-icon {
+      font-size: 20px;
+      width: 32px;
+      height: 32px;
+      background: var(--panel-bg-elevated);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .toast-content {
+      flex: 1;
+    }
+    .toast-title {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+    .toast-body {
+      font-size: 11px;
+      color: var(--text-secondary);
+      margin-top: 2px;
+      line-height: 1.4;
+    }
+    .toast-details {
+      margin-top: 8px;
+      font-size: 10px;
+      color: var(--text-muted);
+      border-top: 1px solid var(--border-hairline);
+      padding-top: 6px;
+      opacity: 0;
+      transition: opacity 0.2s;
+    }
+    .toast:hover .toast-details {
+      opacity: 1;
+    }
+
+    /* ----------------------------------------------------
+       LOCK SCREEN OVERLAY
+       ---------------------------------------------------- */
+    .lock-screen {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: radial-gradient(circle at 50% 50%, rgba(22, 22, 30, 0.6), rgba(13, 15, 23, 0.95)), var(--desktop-bg);
+      backdrop-filter: blur(40px);
+      -webkit-backdrop-filter: blur(40px);
+      z-index: 2000;
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 30px;
+      animation: fadeIn 0.4s ease-out;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+    .lock-clock {
+      text-align: center;
+    }
+    .lock-time {
+      font-size: 72px;
+      font-weight: 500;
+      color: var(--text-primary);
+    }
+    .lock-date {
+      font-size: 18px;
+      color: var(--text-muted);
+      margin-top: 8px;
+    }
+    .lock-form {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+    }
+    .lock-input {
+      width: 220px;
+      height: 36px;
+      border-radius: 8px;
+      border: 1px solid var(--border-emphasis);
+      background: rgba(255, 255, 255, 0.05);
+      color: var(--text-primary);
+      text-align: center;
+      font-size: 14px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    .lock-input:focus {
+      border-color: var(--accent);
+    }
+    .lock-tip {
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    /* ----------------------------------------------------
+       SESSION / LOGOUT DIALOG
+       ---------------------------------------------------- */
+    .logout-overlay {
+      position: absolute;
+      top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(10, 11, 16, 0.7);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      z-index: 2000;
+      display: none;
+      align-items: center;
+      justify-content: center;
+    }
+    .logout-card {
+      width: 320px;
+      background: rgba(22, 22, 30, 0.95);
+      border: 1px solid var(--border-accent);
+      border-radius: var(--radius-window);
+      padding: 20px;
+      box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+      text-align: center;
+      animation: scaleUp 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    @keyframes scaleUp {
+      from { transform: scale(0.9); opacity: 0; }
+      to { transform: scale(1); opacity: 1; }
+    }
+    .logout-title {
+      font-size: 16px;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+    .logout-desc {
+      font-size: 12px;
+      color: var(--text-secondary);
+      margin-bottom: 20px;
+    }
+    .logout-actions {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .logout-btn {
+      width: 100%;
+      padding: 10px;
+      border-radius: 8px;
+      border: 1px solid var(--border-hairline);
+      background: rgba(255,255,255,0.03);
+      color: var(--text-primary);
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 500;
+      transition: background 0.2s, border-color 0.2s;
+    }
+    .logout-btn:hover {
+      background: var(--panel-bg-elevated);
+      border-color: var(--text-secondary);
+    }
+    .logout-btn.danger {
+      background: rgba(247, 118, 142, 0.1);
+      border-color: rgba(247, 118, 142, 0.4);
+      color: var(--red);
+    }
+    .logout-btn.danger:hover {
+      background: var(--red);
+      color: #000;
+      border-color: var(--red);
+    }
+
+    /* ----------------------------------------------------
+       Equalizer animated bars for Spotify App
+       ---------------------------------------------------- */
+    @keyframes eqBounce {
+      0%, 100% { height: 4px; }
+      50% { height: 20px; }
+    }
+    .eq-bar {
+      width: 3px;
+      background: var(--accent);
+      animation: eqBounce 0.8s ease-in-out infinite;
+    }
+    .eq-bar:nth-child(2) { animation-delay: 0.15s; }
+    .eq-bar:nth-child(3) { animation-delay: 0.3s; }
+    .eq-bar:nth-child(4) { animation-delay: 0.45s; }
+    .eq-bar:nth-child(5) { animation-delay: 0.6s; }
+    .eq-bar:nth-child(6) { animation-delay: 0.2s; }
+  </style>
+</head>
+<body>
+
+  <div class="desktop" id="desktop-root">
+
+    <!-- ----------------------------------------------------
+         1. SIMULATOR PANEL (Top-Right Floating Panel)
+         ---------------------------------------------------- -->
+    <div class="sim-panel" id="sim-panel">
+      <div class="sim-header" onclick="toggleSimCollapse()">
+        <span>🛠 myshell Demo Controller</span>
+        <span id="sim-collapse-arrow">▲</span>
+      </div>
+      <div class="sim-body">
+        <div>
+          <div class="sim-section-title">Spawn Client Surface</div>
+          <div class="sim-grid">
+            <button class="sim-btn" onclick="spawnWindow('terminal')"><span>⌨</span> Terminal</button>
+            <button class="sim-btn" onclick="spawnWindow('editor')"><span>💻</span> Code Editor</button>
+            <button class="sim-btn" onclick="spawnWindow('browser')"><span>🦊</span> Browser</button>
+            <button class="sim-btn" onclick="spawnWindow('spotify')"><span>🎵</span> Music Player</button>
+          </div>
+        </div>
+
+        <div>
+          <div class="sim-section-title">Compositor Toggles</div>
+          <div class="sim-grid">
+            <button class="sim-btn" id="sim-tiling-btn" onclick="toggleTiling()">
+              <span>box</span> Tiling: <strong id="sim-tiling-state">OFF</strong>
+            </button>
+            <button class="sim-btn" onclick="toggleTheme()">
+              <span>🌓</span> Switch Theme
+            </button>
+            <button class="sim-btn" id="sim-anchor-btn" onclick="toggleAnchor()">
+              <span>↕</span> Anchor: <strong id="sim-anchor-state">Bottom</strong>
+            </button>
+            <button class="sim-btn" id="sim-labels-btn" onclick="toggleWindowLabels()">
+              <span>🏷</span> Labels: <strong id="sim-labels-state">On</strong>
+            </button>
+          </div>
+        </div>
+
+        <div style="font-size: 11px; color: var(--text-secondary); line-height: 1.4; display: flex; flex-direction: column; gap: 8px;">
+          <div class="sim-section-title">Launcher Controls</div>
+          <div style="background: rgba(0,0,0,0.15); border: 1px solid var(--border-hairline); border-radius: 6px; padding: 8px; box-sizing: border-box; line-height: 1.4;">
+            Press <strong style="color: var(--accent); font-family: var(--font-mono);">Ctrl + Space</strong> or click launcher <strong style="color: var(--accent); font-family: var(--font-mono);">⌕</strong> to toggle search.
+            <br/>
+            Press <strong style="color: var(--accent); font-family: var(--font-mono);">↑ (Up Arrow)</strong> or <strong style="color: var(--accent); font-family: var(--font-mono);">Enter</strong> to expand.
+          </div>
+        </div>
+
+        <div>
+          <div class="sim-section-title">Simulation Events</div>
+          <div class="sim-grid">
+            <button class="sim-btn" onclick="triggerMockNotification()"><span>🔔</span> Send Notification</button>
+            <button class="sim-btn" onclick="adjustSound(5)"><span>🔊</span> Vol Up</button>
+            <button class="sim-btn" onclick="adjustSound(-5)"><span>🔉</span> Vol Down</button>
+            <button class="sim-btn" onclick="triggerLockScreen()"><span>🔒</span> Lock Screen</button>
+          </div>
+        </div>
+
+        <div style="border-top: 1px solid var(--border-hairline); padding-top: 8px; font-size: 10px; color: var(--text-muted);">
+          Tip: Press <code style="font-family: var(--font-mono); color: var(--accent);">Ctrl + Space</code> or click launcher <code style="font-family: var(--font-mono); color: var(--accent);">⌕</code> to open Command Palette search.
+        </div>
+      </div>
+    </div>
+
+    <!-- ----------------------------------------------------
+         2. DESKTOP WINDOWS LAYER
+         ---------------------------------------------------- -->
+    <div class="windows-container" id="windows-container">
+      <!-- Windows will be injected dynamically or toggled via DOM -->
+    </div>
+
+    <!-- ----------------------------------------------------
+         3. DESIGN 1 — HORIZONTAL SHELL PANEL
+         ---------------------------------------------------- -->
+    <div id="panel-h" class="panelH anchor-bottom">
+      <!-- Launcher/Search Trigger -->
+      <div class="launcher" id="launcher-h" onclick="toggleCommandMode()">
+        <span class="launcher-icon">⌕</span>
+      </div>
+
+      <!-- Workspace switcher (Live maps) -->
+      <div class="maps" id="h-maps">
+        <div class="map active" onclick="switchWorkspace(1)"><div class="mini-win"></div></div>
+        <div class="map" onclick="switchWorkspace(2)"></div>
+        <div class="map" onclick="switchWorkspace(3)"></div>
+        <div class="map" onclick="switchWorkspace(4)"></div>
+      </div>
+
+      <!-- Active Workspace Window List (Foreign Toplevel) -->
+      <div class="tasks" id="h-tasks">
+        <!-- Injected by JS -->
+      </div>
+
+      <!-- Spotlight Hybrid Panel Area -->
+      <div class="hybrid-panel-area" id="hybrid-panel-area" onclick="event.stopPropagation()">
+        <!-- Search input row -->
+        <div class="hybrid-search-row" id="hybrid-search-row">
+          <span class="hybrid-search-icon">⌕</span>
+          <input class="search" id="hybrid-search-input" placeholder="Search... (↑ to expand)" />
+        </div>
+        <!-- Compact horizontal results -->
+        <div class="hybrid-horizontal-results" id="hybrid-horizontal-results"></div>
+        
+        <!-- Expanded Panel Body -->
+        <div class="hybrid-panel-body" id="hybrid-panel-body">
+          <!-- Vertical Results List -->
+          <div class="hybrid-panel-list" id="hybrid-list-results">
+            <!-- List items will be injected here -->
+          </div>
+          
+          <!-- Preview Pane -->
+          <div class="hybrid-panel-preview" id="hybrid-preview-content">
+            <!-- Rich preview details will be injected here -->
+          </div>
+        </div>
+      </div>
+
+      <div class="spacer"></div>
+
+      <!-- System status tray -->
+      <div class="tray" onclick="toggleQuickSettings(event)">
+        <span id="tray-wifi">📶</span>
+        <span id="tray-volume">🔊</span>
+        <span id="tray-battery">🔋</span>
+      </div>
+
+      <!-- Date & Clock -->
+      <div class="clock" id="h-clock" onclick="triggerMockNotification('system', 'Calendar', 'No events scheduled for today.')">
+        <div id="h-clock-time">00:00</div>
+        <div class="date" id="h-clock-date">Mon 08 Jun</div>
+      </div>
+    </div>
+
+    <!-- ----------------------------------------------------
+         4. DESIGN 2 — VERTICAL SHELL PANEL
+         ---------------------------------------------------- -->
+    <div id="panel-v" class="panelV" style="display: none;">
+      <!-- Launcher toggle (morphs panel width) -->
+      <div class="launcher" onclick="toggleVerticalExpand()">⌕</div>
+
+      <!-- Compact Search Field (visible in expanded only) -->
+      <div class="v-search-container">
+        <input class="v-search" id="v-cmd-search" placeholder="Search..." oninput="handleVerticalSearch(this.value)"/>
+      </div>
+
+      <!-- Workspace Switcher row (expanded only) -->
+      <div class="v-ws-pips" id="v-pips">
+        <div class="v-ws-pip active" onclick="switchWorkspace(1)"></div>
+        <div class="v-ws-pip" onclick="switchWorkspace(2)"></div>
+        <div class="v-ws-pip" onclick="switchWorkspace(3)"></div>
+        <div class="v-ws-pip" onclick="switchWorkspace(4)"></div>
+      </div>
+
+      <!-- Vertical Window List (morphs icon-only to text-labeled) -->
+      <div class="v-list" id="v-tasks">
+        <!-- Injected by JS -->
+      </div>
+
+      <!-- Tray Stack (morphs stacked to horizontal row) -->
+      <div class="v-tray" id="v-tray-container" onclick="toggleQuickSettings(event)">
+        <span id="v-tray-wifi">📶</span>
+        <span id="v-tray-volume">🔊</span>
+        <span id="v-tray-battery">🔋</span>
+      </div>
+
+      <!-- Vertical Clock -->
+      <div class="v-clock" id="v-clock" onclick="toggleVerticalExpand()">
+        <div class="v-clock-time" id="v-clock-time">00:00</div>
+        <div class="v-clock-date" id="v-clock-date">Mon 08 Jun</div>
+      </div>
+    </div>
+
+    <!-- ----------------------------------------------------
+         5. QUICK SETTINGS POPUP SYSTEM
+         ---------------------------------------------------- -->
+    <div class="quick-settings" id="quick-settings">
+      <div class="qs-header">
+        <div class="qs-avatar">A</div>
+        <div class="qs-userinfo">
+          <div>alec</div>
+          <div class="host">myshell@mangowc</div>
+        </div>
+      </div>
+      <div class="qs-toggles">
+        <button class="qs-toggle-btn active" id="qs-wifi" onclick="toggleWifi()">
+          <span>📶</span> Wifi: On
+        </button>
+        <button class="qs-toggle-btn active" id="qs-bluetooth" onclick="toggleBluetooth()">
+          <span>🔹</span> Bluetooth
+        </button>
+        <button class="qs-toggle-btn" id="qs-tiling" onclick="toggleTiling()">
+          <span>box</span> Tiling Mode
+        </button>
+        <button class="qs-toggle-btn" onclick="toggleTheme()">
+          <span>🌓</span> Color Theme
+        </button>
+      </div>
+      <div class="qs-sliders">
+        <div class="qs-slider-group">
+          <div class="qs-slider-label">
+            <span>VOLUME</span>
+            <span id="qs-volume-val">75%</span>
+          </div>
+          <div class="qs-slider-row">
+            <span class="qs-slider-icon">🔊</span>
+            <input type="range" class="qs-slider" id="volume-slider" min="0" max="100" value="75" oninput="setVolume(this.value)" />
+          </div>
+        </div>
+        <div class="qs-slider-group">
+          <div class="qs-slider-label">
+            <span>BRIGHTNESS</span>
+            <span id="qs-brightness-val">80%</span>
+          </div>
+          <div class="qs-slider-row">
+            <span class="qs-slider-icon">☀️</span>
+            <input type="range" class="qs-slider" id="brightness-slider" min="10" max="100" value="80" oninput="setBrightness(this.value)" />
+          </div>
+        </div>
+      </div>
+      <div class="qs-footer">
+        <span>🔋 84% (Discharging)</span>
+        <span style="color: var(--accent); cursor: pointer;" onclick="triggerLogout()">Power ⚡</span>
+      </div>
+    </div>
+
+    <!-- ----------------------------------------------------
+         6. EGL OSD OVERLAY (Volume / Brightness HUD)
+         ---------------------------------------------------- -->
+    <div class="osd-overlay" id="osd-overlay">
+      <div class="osd-icon" id="osd-icon">🔊</div>
+      <div class="osd-bar-container">
+        <div class="osd-bar-fill" id="osd-fill"></div>
+      </div>
+    </div>
+
+    <!-- ----------------------------------------------------
+         7. NOTIFICATIONS STACK LAYER
+         ---------------------------------------------------- -->
+    <div class="notification-container pos-br" id="notification-container">
+      <!-- Toast nodes will slide in here dynamically -->
+    </div>
+
+    <!-- Old launcher overlays removed -->
+
+    <!-- Spotlight Hybrid Popup removed (now inline in bottom panel) -->
+
+    <!-- ----------------------------------------------------
+         8. LOCK SCREEN OVERLAY
+         ---------------------------------------------------- -->
+    <div class="lock-screen" id="lock-screen">
+      <div class="lock-clock">
+        <div class="lock-time" id="lock-time">14:28</div>
+        <div class="lock-date" id="lock-date">Monday, 08 June</div>
+      </div>
+      <div class="lock-form">
+        <input type="password" class="lock-input" id="lock-input" placeholder="Enter password to unlock" onkeydown="handleUnlockKey(event)"/>
+        <div class="lock-tip">Press Enter or type anything to unlock</div>
+      </div>
+    </div>
+
+    <!-- ----------------------------------------------------
+         9. SESSION / LOGOUT DIALOG
+         ---------------------------------------------------- -->
+    <div class="logout-overlay" id="logout-overlay" onclick="closeLogout()">
+      <div class="logout-card" onclick="event.stopPropagation()">
+        <div class="logout-title">Quit Session?</div>
+        <div class="logout-desc">Select power options for myshell desktop env</div>
+        <div class="logout-actions">
+          <button class="logout-btn danger" onclick="restartDemo()">Log Out</button>
+          <button class="logout-btn" onclick="restartDemo()">Restart Compositor</button>
+          <button class="logout-btn" onclick="closeLogout()">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ----------------------------------------------------
+       SCRIPT: INTERACTIVE STATE CONTROLLER
+       ---------------------------------------------------- -->
+  <script>
+    // ----------------------------------------------------
+    // INITIAL SYSTEM STATE
+    // ----------------------------------------------------
+    const state = {
+      activeLayout: 'h',     // 'h' (horizontal) or 'v' (vertical)
+      activeWorkspace: 1,    // 1 to 4
+      activeWindowId: null,
+      tilingEnabled: false,
+      panelPosition: 'bottom', // 'bottom' or 'top' (Design 1)
+      windowLabelsEnabled: true, // true (on) or false (icons-only) (Design 1)
+      volume: 75,
+      brightness: 80,
+      isLocked: false,
+      isCommandMode: false,
+      isCommandExpanded: false, // compact vs expanded hybrid design
+      isVerticalExpanded: false,
+      theme: 'dark',
+      wifiOn: true,
+      bluetoothOn: true,
+      
+      // Seed Windows data
+      windows: [
+        { id: 1, workspace: 1, title: 'Terminal', appType: 'terminal', left: 40, top: 40, width: 480, height: 320, minimized: false, maximized: false },
+        { id: 2, workspace: 1, title: 'VS Code - src/panel.cpp', appType: 'editor', left: 480, top: 120, width: 560, height: 420, minimized: false, maximized: false },
+        { id: 3, workspace: 2, title: 'Firefox - MangoWC compositor', appType: 'browser', left: 80, top: 50, width: 640, height: 440, minimized: false, maximized: false },
+        { id: 4, workspace: 2, title: 'Spotify - Synthwave Chill', appType: 'spotify', left: 500, top: 260, width: 420, height: 280, minimized: false, maximized: false }
+      ],
+      nextWindowId: 5
+    };
+
+    // Store floating coordinates when entering Tiling mode
+    const floatingCache = {};
+
+    // ----------------------------------------------------
+    // APPLICATION TEMPLATES
+    // ----------------------------------------------------
+    const appTemplates = {
+      terminal: (id) => `
+        <div class="terminal-body" style="font-family: var(--font-mono); font-size: 11px; background: #0f1015; color: #a9b1d6; height: 100%; padding: 10px; box-sizing: border-box; overflow-y: auto;">
+          <div style="color: var(--green);">alec@myshell:~$ meson compile -C buildDir</div>
+          <div class="term-output" id="term-${id}">[0/5] Starting ninja compilation...</div>
+          <span class="term-cursor" style="display: inline-block; width: 6px; height: 13px; background: var(--text-primary); margin-left: 2px; animation: flash 1s infinite;"></span>
+        </div>
+      `,
+      editor: () => `
+        <div class="editor-body" style="display: flex; height: 100%; background: #1a1b26;">
+          <div class="editor-sidebar" style="width: 44px; background: #16161e; border-right: 1px solid var(--border-hairline); display: flex; flex-direction: column; align-items: center; padding-top: 12px; gap: 18px;">
+            <div style="font-size: 18px; color: var(--accent); cursor: pointer;">📁</div>
+            <div style="font-size: 18px; color: var(--text-muted); cursor: pointer;">⌕</div>
+            <div style="font-size: 18px; color: var(--text-muted); cursor: pointer;">⚙</div>
+          </div>
+          <div class="editor-files" style="width: 130px; background: #1e1f29; border-right: 1px solid var(--border-hairline); padding: 10px; font-size: 11px; color: var(--text-secondary);">
+            <div style="font-weight: 700; font-size: 9px; text-transform: uppercase; color: var(--text-muted); margin-bottom: 8px;">myshell</div>
+            <div style="padding: 4px 6px; color: var(--accent); background: var(--panel-bg-elevated); border-radius: 4px;">📄 panel.cpp</div>
+            <div style="padding: 4px 6px; opacity: 0.7;">📄 egl.cpp</div>
+            <div style="padding: 4px 6px; opacity: 0.7;">📄 main.cpp</div>
+            <div style="padding: 4px 6px; opacity: 0.7;">📄 protocol.hpp</div>
+          </div>
+          <div class="editor-code" style="flex: 1; padding: 10px; font-family: var(--font-mono); font-size: 11px; color: #a9b1d6; overflow-y: auto; white-space: pre; background: #1a1b26; line-height: 1.4;">
+<span style="color: var(--magenta);">#include</span> <span style="color: var(--green);">&lt;wayland-client.h&gt;</span>
+<span style="color: var(--magenta);">#include</span> <span style="color: var(--green);">"protocol.hpp"</span>
+
+<span style="color: var(--cyan);">int</span> <span style="color: var(--yellow);">init_egl</span>() {
+    EGLint major, minor;
+    EGLDisplay d = <span style="color: var(--yellow);">eglGetDisplay</span>(wl_display);
+    <span style="color: var(--magenta);">if</span> (!d) <span style="color: var(--magenta);">return</span> <span style="color: var(--cyan);">false</span>;
+    <span style="color: var(--magenta);">if</span> (!<span style="color: var(--yellow);">eglInitialize</span>(d, &major, &minor)) {
+        <span style="color: var(--magenta);">return</span> <span style="color: var(--cyan);">false</span>;
+    }
+    <span style="color: var(--magenta);">return</span> <span style="color: var(--cyan);">true</span>;
+}</div>
+        </div>
+      `,
+      browser: () => `
+        <div class="browser-body" style="display: flex; flex-direction: column; height: 100%; background: #1f2335;">
+          <div class="browser-nav" style="height: 32px; background: #16161e; border-bottom: 1px solid var(--border-hairline); display: flex; align-items: center; padding: 0 8px; gap: 8px;">
+            <div style="display: flex; gap: 4px;">
+              <span style="font-size: 12px; cursor: pointer; opacity: 0.5;">◀</span>
+              <span style="font-size: 12px; cursor: pointer; opacity: 0.5;">▶</span>
+            </div>
+            <input type="text" value="https://mangowc.org/docs" style="flex: 1; height: 22px; background: #24283b; border: 1px solid var(--border-hairline); border-radius: 4px; color: var(--text-primary); padding: 0 8px; font-size: 10px; outline: none;" readonly>
+            <span style="color: var(--accent); font-size: 14px;">🦊</span>
+          </div>
+          <div class="browser-content" style="flex: 1; padding: 12px; color: var(--text-secondary); overflow-y: auto; font-size: 12px; line-height: 1.5; background: #1f2335;">
+            <h1 style="color: var(--text-primary); font-size: 15px; margin-bottom: 4px; font-weight: 600;">MangoWC Compositor</h1>
+            <p style="margin-bottom: 10px; font-size: 11px; color: var(--text-muted);">Tiling compositor leveraging wlroots API.</p>
+            <div style="background: rgba(0,0,0,0.15); padding: 8px 10px; border-radius: 6px; border-left: 2px solid var(--accent); margin-bottom: 10px;">
+              <strong style="color: var(--text-primary); font-size: 11px;">Desktop Protocol:</strong><br>
+              myshell uses <code style="font-family: var(--font-mono); color: var(--yellow);">zwlr_layer_shell_v1</code> to grab anchors, exclusive margins, and handle registry outputs.
+            </div>
+            <p style="font-size: 11px; opacity: 0.85;">Compositor bindings:<br>
+            • <code>Super + Space</code> - Toggle Command mode launcher<br>
+            • <code>Super + [1-4]</code> - Focus Workspaces 1-4</p>
+          </div>
+        </div>
+      `,
+      spotify: () => `
+        <div class="spotify-body" style="display: flex; flex-direction: column; height: 100%; background: #121214; color: #fff; padding: 12px; box-sizing: border-box;">
+          <div style="display: flex; gap: 12px; align-items: center; flex: 1;">
+            <div style="width: 60px; height: 60px; background: linear-gradient(135deg, var(--accent), var(--magenta)); border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 26px; box-shadow: 0 6px 12px rgba(0,0,0,0.4);">🎵</div>
+            <div style="flex: 1; min-width: 0;">
+              <div style="font-weight: 700; font-size: 13px; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Home</div>
+              <div style="font-size: 11px; color: var(--text-secondary); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Resonance</div>
+              <div style="display: flex; gap: 3px; align-items: flex-end; height: 16px; margin-top: 6px;" class="eq-container">
+                <div class="eq-bar"></div>
+                <div class="eq-bar"></div>
+                <div class="eq-bar"></div>
+                <div class="eq-bar"></div>
+                <div class="eq-bar"></div>
+              </div>
+            </div>
+          </div>
+          <div style="height: 34px; display: flex; align-items: center; gap: 10px; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 8px; margin-top: 8px;">
+            <span style="font-size: 12px; cursor: pointer; opacity: 0.7;">⏮</span>
+            <span style="font-size: 16px; cursor: pointer; color: var(--accent);">⏸</span>
+            <span style="font-size: 12px; cursor: pointer; opacity: 0.7;">⏭</span>
+            <div style="flex: 1; height: 3px; background: rgba(255,255,255,0.1); border-radius: 1.5px; position: relative;">
+              <div style="position: absolute; left: 0; top: 0; width: 48%; height: 100%; background: var(--accent); border-radius: 1.5px;"></div>
+            </div>
+            <span style="font-size: 10px; color: var(--text-muted);">1:42 / 3:32</span>
+          </div>
+        </div>
+      `
+    };
+
+    const appIcons = {
+      terminal: '⌨',
+      editor: '💻',
+      browser: '🦊',
+      spotify: '🎵'
+    };
+
+    // ----------------------------------------------------
+    // SYSTEM INITIALIZATION
+    // ----------------------------------------------------
+    window.addEventListener('DOMContentLoaded', () => {
+      // Set initial clock
+      updateClock();
+      setInterval(updateClock, 1000);
+
+      // Render windows in DOM
+      createWindowsInDOM();
+      
+      // Update workspace maps
+      updateWorkspaceMaps();
+      updateTaskList();
+      
+      // Register global drag & drop
+      setupWindowInteractions();
+
+      // Autocomplete setup
+      setupCommandModeSearch();
+
+      // Simulate compiler logs
+      setInterval(runCompilerSimulation, 1400);
+
+      // Show welcome toast
+      setTimeout(() => {
+        triggerMockNotification('system', 'Welcome to myshell Panel', 'Tokyo Night UI Mockup active. Tiling calculations and exclusive zones loaded.');
+      }, 800);
+    });
+
+    // ----------------------------------------------------
+    // CLOCK CONTROLLER
+    // ----------------------------------------------------
+    function updateClock() {
+      const d = new Date();
+      let hrs = d.getHours().toString().padStart(2, '0');
+      let mins = d.getMinutes().toString().padStart(2, '0');
+      
+      // Clock elements
+      document.getElementById('h-clock-time').textContent = `${hrs}:${mins}`;
+      document.getElementById('v-clock-time').textContent = `${hrs}:${mins}`;
+      
+      // Lock screen clock
+      document.getElementById('lock-time').textContent = `${hrs}:${mins}`;
+
+      // Date Format: Mon 08 Jun
+      const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      
+      const day = days[d.getDay()];
+      const dateNum = d.getDate().toString().padStart(2, '0');
+      const month = months[d.getMonth()];
+      
+      const formattedDate = `${day} ${dateNum} ${month}`;
+      document.getElementById('h-clock-date').textContent = formattedDate;
+      document.getElementById('v-clock-date').textContent = formattedDate;
+      
+      // Full date for lock screen
+      const daysFull = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+      const monthsFull = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+      document.getElementById('lock-date').textContent = `${daysFull[d.getDay()]}, ${d.getDate()} ${monthsFull[d.getMonth()]}`;
+    }
+
+    // ----------------------------------------------------
+    // WINDOW RENDERER & FACTORY
+    // ----------------------------------------------------
+    function createWindowsInDOM() {
+      const container = document.getElementById('windows-container');
+      container.innerHTML = '';
+
+      state.windows.forEach(w => {
+        const winEl = document.createElement('div');
+        winEl.className = 'mock-window';
+        winEl.id = `win-${w.id}`;
+        winEl.dataset.id = w.id;
+        winEl.dataset.workspace = w.workspace;
+        
+        // Add specific app styling or structure
+        winEl.innerHTML = `
+          <div class="window-header">
+            <div class="win-title-container">
+              <span class="win-icon">${appIcons[w.appType] || '📄'}</span>
+              <span class="win-title-text">${w.title}</span>
+            </div>
+            <div class="win-controls">
+              <button class="win-btn win-min" onclick="minimizeWindow(${w.id})">‒</button>
+              <button class="win-btn win-max" onclick="maximizeWindow(${w.id})">⤢</button>
+              <button class="win-btn win-close" onclick="closeWindow(${w.id})">×</button>
+            </div>
+          </div>
+          <div class="window-content">
+            ${appTemplates[w.appType] ? appTemplates[w.appType](w.id) : '<div style="padding:10px;">Empty Window</div>'}
+          </div>
+          <div class="resize-handle"></div>
+        `;
+        
+        container.appendChild(winEl);
+        
+        // Position it
+        winEl.style.left = `${w.left}px`;
+        winEl.style.top = `${w.top}px`;
+        winEl.style.width = `${w.width}px`;
+        winEl.style.height = `${w.height}px`;
+      });
+      
+      syncWindowVisibility();
+    }
+
+    // Toggle showing windows on current active workspace
+    function syncWindowVisibility() {
+      state.windows.forEach(w => {
+        const winEl = document.getElementById(`win-${w.id}`);
+        if (!winEl) return;
+
+        const isCurrentWS = w.workspace === state.activeWorkspace;
+        
+        if (isCurrentWS && !w.minimized) {
+          winEl.classList.remove('hidden');
+          // Add focused tag if appropriate
+          winEl.classList.toggle('focused', w.id === state.activeWindowId);
+          
+          if (w.maximized) {
+            winEl.classList.add('maximized');
+            winEl.style.left = '0px';
+            winEl.style.top = '0px';
+            winEl.style.width = '100%';
+            winEl.style.height = '100%';
+          } else {
+            winEl.classList.remove('maximized');
+            winEl.style.left = `${w.left}px`;
+            winEl.style.top = `${w.top}px`;
+            winEl.style.width = `${w.width}px`;
+            winEl.style.height = `${w.height}px`;
+          }
+        } else {
+          winEl.classList.add('hidden');
+          winEl.classList.remove('focused');
+        }
+      });
+    }
+
+    // Spawn a new app window
+    function spawnWindow(appType) {
+      const ws = state.activeWorkspace;
+      
+      // Stagger new windows based on count
+      const wsCount = state.windows.filter(w => w.workspace === ws).length;
+      const offset = (wsCount * 25) % 150;
+      
+      let title = appType.charAt(0).toUpperCase() + appType.slice(1);
+      if (appType === 'editor') title = 'VS Code - main.cpp';
+      if (appType === 'browser') title = 'Firefox';
+      
+      const newWin = {
+        id: state.nextWindowId++,
+        workspace: ws,
+        title: title,
+        appType: appType,
+        left: 100 + offset,
+        top: 80 + offset,
+        width: 500,
+        height: 350,
+        minimized: false,
+        maximized: false
+      };
+      
+      state.windows.push(newWin);
+      
+      // Create DOM element
+      createWindowsInDOM();
+      
+      // Focus it
+      focusWindow(newWin.id);
+      
+      // If tiling mode is active, apply it
+      if (state.tilingEnabled) {
+        applyTilingLayout();
+      } else {
+        updateWorkspaceMaps();
+      }
+      
+      updateTaskList();
+      triggerMockNotification('app', 'Surface Launched', `Spawned window ID ${newWin.id} (${title}) on Workspace ${ws}.`);
+    }
+
+    function focusWindow(id) {
+      state.windows.forEach(w => {
+        if (w.id === id) {
+          w.minimized = false;
+          state.activeWorkspace = w.workspace; // Jump to workspace
+        }
+      });
+      state.activeWindowId = id;
+      
+      syncWindowVisibility();
+      
+      // Sync panel active indicators
+      document.querySelectorAll('.map').forEach((map, i) => {
+        map.classList.toggle('active', i + 1 === state.activeWorkspace);
+      });
+      document.querySelectorAll('.v-ws-pip').forEach((pip, i) => {
+        pip.classList.toggle('active', i + 1 === state.activeWorkspace);
+      });
+      
+      updateWorkspaceMaps();
+      updateTaskList();
+    }
+
+    function minimizeWindow(id) {
+      const w = state.windows.find(x => x.id === id);
+      if (w) {
+        w.minimized = true;
+        if (state.activeWindowId === id) {
+          state.activeWindowId = null;
+        }
+        
+        if (state.tilingEnabled) {
+          applyTilingLayout();
+        } else {
+          syncWindowVisibility();
+          updateWorkspaceMaps();
+        }
+        updateTaskList();
+      }
+    }
+
+    function maximizeWindow(id) {
+      const w = state.windows.find(x => x.id === id);
+      if (w) {
+        w.maximized = !w.maximized;
+        syncWindowVisibility();
+        updateWorkspaceMaps();
+        updateTaskList();
+      }
+    }
+
+    function closeWindow(id) {
+      const idx = state.windows.findIndex(x => x.id === id);
+      if (idx !== -1) {
+        const w = state.windows[idx];
+        state.windows.splice(idx, 1);
+        if (state.activeWindowId === id) {
+          state.activeWindowId = null;
+        }
+        
+        // Remove from DOM
+        const el = document.getElementById(`win-${id}`);
+        if (el) el.remove();
+        
+        if (state.tilingEnabled) {
+          applyTilingLayout();
+        } else {
+          syncWindowVisibility();
+          updateWorkspaceMaps();
+        }
+        updateTaskList();
+        triggerMockNotification('app', 'Surface Destroyed', `Client ID ${id} (${w.title}) exited gracefully.`);
+      }
+    }
+
+    // ----------------------------------------------------
+    // COMPOSITOR IPC WORKSPACE SWITCHER
+    // ----------------------------------------------------
+    function switchWorkspace(wsId) {
+      if (state.activeWorkspace === wsId) return;
+      
+      state.activeWorkspace = wsId;
+      
+      // Clear active window if switching away from its workspace
+      const activeWin = state.windows.find(w => w.id === state.activeWindowId);
+      if (activeWin && activeWin.workspace !== wsId) {
+        state.activeWindowId = null;
+      }
+      
+      // Transition elements
+      syncWindowVisibility();
+      
+      // Update switcher active states
+      document.querySelectorAll('.map').forEach((map, i) => {
+        map.classList.toggle('active', i + 1 === wsId);
+      });
+      document.querySelectorAll('.v-ws-pip').forEach((pip, i) => {
+        pip.classList.toggle('active', i + 1 === wsId);
+      });
+      
+      updateWorkspaceMaps();
+      updateTaskList();
+    }
+
+    // ----------------------------------------------------
+    // DRAG AND DROP / RESIZE POINTER EVENTS ENGINE
+    // ----------------------------------------------------
+    function setupWindowInteractions() {
+      let isPointerDown = false;
+      let action = null; // { type: 'drag'|'resize', id, startX, startY, startLeft, startTop, startW, startH }
+
+      document.addEventListener('pointerdown', e => {
+        const header = e.target.closest('.window-header');
+        const resizeHandle = e.target.closest('.resize-handle');
+        const winEl = e.target.closest('.mock-window');
+        
+        if (!winEl) return;
+        const id = parseInt(winEl.dataset.id);
+        const wData = state.windows.find(w => w.id === id);
+        
+        // Focus window
+        focusWindow(id);
+
+        if (e.target.closest('.win-btn') || state.tilingEnabled || wData.maximized) {
+          // Do not initiate move/resize for controls, tiled mode, or maximized windows
+          return;
+        }
+
+        if (header) {
+          isPointerDown = true;
+          action = {
+            type: 'drag',
+            id: id,
+            startX: e.clientX,
+            startY: e.clientY,
+            startLeft: wData.left,
+            startTop: wData.top
+          };
+          winEl.style.transition = 'none'; // Lock animations while dragging
+          document.body.style.cursor = 'grabbing';
+          e.preventDefault();
+        } else if (resizeHandle) {
+          isPointerDown = true;
+          action = {
+            type: 'resize',
+            id: id,
+            startX: e.clientX,
+            startY: e.clientY,
+            startW: wData.width,
+            startH: wData.height
+          };
+          winEl.style.transition = 'none';
+          document.body.style.cursor = 'se-resize';
+          e.preventDefault();
+        }
+      });
+
+      document.addEventListener('pointermove', e => {
+        if (!isPointerDown || !action) return;
+
+        const wData = state.windows.find(w => w.id === action.id);
+        const winEl = document.getElementById(`win-${action.id}`);
+        if (!wData || !winEl) return;
+
+        const dx = e.clientX - action.startX;
+        const dy = e.clientY - action.startY;
+
+        if (action.type === 'drag') {
+          let nextL = action.startLeft + dx;
+          let nextT = action.startTop + dy;
+          
+          // Boundaries constraints
+          const container = document.getElementById('windows-container');
+          const bounds = container.getBoundingClientRect();
+          nextL = Math.max(-wData.width + 100, Math.min(nextL, bounds.width - 100));
+          nextT = Math.max(0, Math.min(nextT, bounds.height - 30));
+
+          wData.left = nextL;
+          wData.top = nextT;
+          winEl.style.left = `${nextL}px`;
+          winEl.style.top = `${nextT}px`;
+        } else if (action.type === 'resize') {
+          let nextW = action.startW + dx;
+          let nextH = action.startH + dy;
+
+          // Enforce minimum sizes
+          nextW = Math.max(260, nextW);
+          nextH = Math.max(180, nextH);
+
+          wData.width = nextW;
+          wData.height = nextH;
+          winEl.style.width = `${nextW}px`;
+          winEl.style.height = `${nextH}px`;
+        }
+
+        updateWorkspaceMaps();
+      });
+
+      document.addEventListener('pointerup', () => {
+        if (isPointerDown && action) {
+          const winEl = document.getElementById(`win-${action.id}`);
+          if (winEl) winEl.style.transition = ''; // Unlock transition
+        }
+        isPointerDown = false;
+        action = null;
+        document.body.style.cursor = 'default';
+      });
+    }
+
+    // ----------------------------------------------------
+    // COMPOSITOR TILING LAYOUT ENGINE (MangoWC Simulation)
+    // ----------------------------------------------------
+    function toggleTiling() {
+      state.tilingEnabled = !state.tilingEnabled;
+      
+      const tilingBtn = document.getElementById('sim-tiling-btn');
+      const tilingStateText = document.getElementById('sim-tiling-state');
+      const qsTilingBtn = document.getElementById('qs-tiling');
+      
+      if (state.tilingEnabled) {
+        tilingBtn.classList.add('active');
+        tilingStateText.textContent = 'ON';
+        qsTilingBtn.classList.add('active');
+        
+        // Cache floating sizes before overwriting
+        state.windows.forEach(w => {
+          floatingCache[w.id] = { left: w.left, top: w.top, width: w.width, height: w.height };
+        });
+        
+        applyTilingLayout();
+        triggerMockNotification('system', 'Tiling Mode Engaged', 'Compositor layout changed to Master-Stack tiling grid.');
+      } else {
+        tilingBtn.classList.remove('active');
+        tilingStateText.textContent = 'OFF';
+        qsTilingBtn.classList.remove('active');
+        
+        // Restore floating sizes
+        state.windows.forEach(w => {
+          const cached = floatingCache[w.id];
+          if (cached) {
+            w.left = cached.left;
+            w.top = cached.top;
+            w.width = cached.width;
+            w.height = cached.height;
+          }
+        });
+        
+        syncWindowVisibility();
+        updateWorkspaceMaps();
+        triggerMockNotification('system', 'Floating Mode Engaged', 'Restored absolute window surfaces coordinates.');
+      }
+    }
+
+    function applyTilingLayout() {
+      if (!state.tilingEnabled) return;
+
+      const ws = state.activeWorkspace;
+      // Get all non-minimized, non-maximized windows in this workspace
+      const visibleWins = state.windows.filter(w => w.workspace === ws && !w.minimized && !w.maximized);
+      const N = visibleWins.length;
+      if (N === 0) return;
+
+      const container = document.getElementById('windows-container');
+      const bounds = container.getBoundingClientRect();
+      const W = bounds.width;
+      const H = bounds.height;
+      
+      const gap = 8; // Tiling padding gap
+
+      if (N === 1) {
+        const w = visibleWins[0];
+        w.left = gap;
+        w.top = gap;
+        w.width = W - gap * 2;
+        w.height = H - gap * 2;
+      } else if (N === 2) {
+        // Master left, stack right
+        const w1 = visibleWins[0];
+        w1.left = gap;
+        w1.top = gap;
+        w1.width = Math.floor(W / 2) - gap * 1.5;
+        w1.height = H - gap * 2;
+
+        const w2 = visibleWins[1];
+        w2.left = Math.floor(W / 2) + gap * 0.5;
+        w2.top = gap;
+        w2.width = Math.floor(W / 2) - gap * 1.5;
+        w2.height = H - gap * 2;
+      } else {
+        // Master left, vertical stack on right
+        const w1 = visibleWins[0];
+        w1.left = gap;
+        w1.top = gap;
+        w1.width = Math.floor(W / 2) - gap * 1.5;
+        w1.height = H - gap * 2;
+
+        const stackCount = N - 1;
+        const stackW = Math.floor(W / 2) - gap * 1.5;
+        const stackH = Math.floor((H - gap * 2 - gap * (stackCount - 1)) / stackCount);
+
+        for (let i = 1; i < N; i++) {
+          const w = visibleWins[i];
+          w.left = Math.floor(W / 2) + gap * 0.5;
+          w.top = gap + (i - 1) * (stackH + gap);
+          w.width = stackW;
+          w.height = stackH;
+        }
+      }
+
+      // Render styles
+      visibleWins.forEach(w => {
+        const el = document.getElementById(`win-${w.id}`);
+        if (el) {
+          el.style.left = `${w.left}px`;
+          el.style.top = `${w.top}px`;
+          el.style.width = `${w.width}px`;
+          el.style.height = `${w.height}px`;
+        }
+      });
+
+      updateWorkspaceMaps();
+    }
+
+    // ----------------------------------------------------
+    // ACTIVE WORKSPACE MINI TILING MAPS RENDERER
+    // ----------------------------------------------------
+    function updateWorkspaceMaps() {
+      const container = document.getElementById('windows-container');
+      const bounds = container.getBoundingClientRect();
+      const W = bounds.width || 1200;
+      const H = bounds.height || 600;
+
+      // Draw maps for both Horizontal Panel & Vertical Panel
+      for (let ws = 1; ws <= 4; ws++) {
+        const maps = [
+          document.querySelector(`#h-maps .map:nth-child(${ws})`),
+          document.querySelector(`#v-pips .v-ws-pip:nth-child(${ws})`)
+        ];
+
+        maps.forEach(map => {
+          if (!map) return;
+          
+          // Clear current drawings unless it's the vertical pip (which doesn't render mini wins)
+          if (map.classList.contains('map')) {
+            map.innerHTML = '';
+            
+            // Get windows on workspace
+            const wsWins = state.windows.filter(w => w.workspace === ws && !w.minimized);
+            wsWins.forEach(w => {
+              const miniWin = document.createElement('div');
+              miniWin.className = 'mini-win';
+              if (w.id === state.activeWindowId) {
+                miniWin.classList.add('active');
+              }
+              
+              // Calculate percentages
+              let lPct = (w.left / W) * 100;
+              let tPct = (w.top / H) * 100;
+              let wPct = (w.width / W) * 100;
+              let hPct = (w.height / H) * 100;
+
+              if (w.maximized) {
+                lPct = 0; tPct = 0; wPct = 100; hPct = 100;
+              }
+
+              miniWin.style.left = `${Math.max(0, Math.min(lPct, 95))}%`;
+              miniWin.style.top = `${Math.max(0, Math.min(tPct, 95))}%`;
+              miniWin.style.width = `${Math.max(8, Math.min(wPct, 100))}%`;
+              miniWin.style.height = `${Math.max(8, Math.min(hPct, 100))}%`;
+
+              map.appendChild(miniWin);
+            });
+          }
+        });
+      }
+    }
+
+    // ----------------------------------------------------
+    // TASKBAR WINDOW BUTTONS CONTROLLER
+    // ----------------------------------------------------
+    function updateTaskList() {
+      const hTasks = document.getElementById('h-tasks');
+      const vTasks = document.getElementById('v-tasks');
+      
+      hTasks.innerHTML = '';
+      vTasks.innerHTML = '';
+
+      // Only show windows belonging to the current active workspace
+      const currentWSWindows = state.windows.filter(w => w.workspace === state.activeWorkspace);
+
+      currentWSWindows.forEach(w => {
+        // Horizontal Panel Button
+        const hBtn = document.createElement('div');
+        hBtn.className = 'task';
+        if (w.id === state.activeWindowId) hBtn.classList.add('active');
+        if (w.minimized) hBtn.classList.add('minimized');
+        hBtn.onclick = () => handleTaskClick(w.id);
+        
+        const labelText = state.windowLabelsEnabled ? w.title : '';
+        hBtn.innerHTML = `<span>${appIcons[w.appType] || '📄'}</span> ${labelText}`;
+        hTasks.appendChild(hBtn);
+
+        // Vertical Panel Button
+        const vBtn = document.createElement('div');
+        vBtn.className = 'v-item';
+        if (w.id === state.activeWindowId) vBtn.classList.add('active');
+        vBtn.onclick = () => handleTaskClick(w.id);
+
+        vBtn.innerHTML = `
+          <span class="v-item-icon">${appIcons[w.appType] || '📄'}</span>
+          <span class="v-item-label">${w.title}</span>
+        `;
+        vTasks.appendChild(vBtn);
+      });
+    }
+
+    function handleTaskClick(id) {
+      const w = state.windows.find(x => x.id === id);
+      if (!w) return;
+
+      if (w.minimized) {
+        w.minimized = false;
+        focusWindow(id);
+      } else if (state.activeWindowId === id) {
+        // Minimize if clicking active task
+        minimizeWindow(id);
+      } else {
+        focusWindow(id);
+      }
+    }
+
+    // ----------------------------------------------------
+    // SIMULATED TERMINAL COMPILER LOGGER
+    // ----------------------------------------------------
+    const termLogs = [
+      "Cloning dependencies...",
+      "Found dependency wayland-client at /usr/lib/pkgconfig",
+      "wayland-scanner client-header protocols/wlr-layer-shell-unstable-v1.xml client-protocol.h",
+      "wayland-scanner private-code protocols/wlr-layer-shell-unstable-v1.xml client-protocol.c",
+      "meson setup buildDir --backend ninja",
+      "meson compile -C buildDir",
+      "[1/5] Generating layer-shell protocol headers...",
+      "[2/5] Compiling src/egl.cpp...",
+      "[3/5] Compiling src/panel.cpp...",
+      "[4/5] Compiling src/main.cpp...",
+      "[5/5] Linking buildDir/myshell",
+      "Build successful. Target binary: buildDir/myshell",
+      "Connecting to Wayland socket...",
+      "Registry bound global: wl_compositor (ver 4)",
+      "Registry bound global: zwlr_layer_shell_v1 (ver 1)",
+      "Created layer surface panel for monitor 'HDMI-A-1'",
+      "EGL initialization succeeded.",
+      "Buffer size negotiated: 1920x48",
+      "Exclusive margin set: 48px",
+      "Running main events loop..."
+    ];
+
+    function runCompilerSimulation() {
+      state.windows.forEach(w => {
+        if (w.appType === 'terminal' && w.workspace === state.activeWorkspace && !w.minimized) {
+          const logEl = document.getElementById(`term-${w.id}`);
+          if (!logEl) return;
+
+          if (!logEl.dataset.lineIdx) logEl.dataset.lineIdx = '0';
+          let idx = parseInt(logEl.dataset.lineIdx);
+          
+          if (Math.random() > 0.3) {
+            const row = document.createElement('div');
+            // Stylize warnings/success
+            const text = termLogs[idx % termLogs.length];
+            if (text.includes("Build successful") || text.includes("succeeded")) {
+              row.style.color = "var(--green)";
+              row.style.fontWeight = "bold";
+            } else if (text.includes("Compiling") || text.includes("Generating")) {
+              row.style.color = "var(--cyan)";
+            } else if (text.includes("protocol")) {
+              row.style.color = "var(--magenta)";
+            }
+            row.textContent = text;
+            logEl.appendChild(row);
+            logEl.scrollTop = logEl.scrollHeight;
+
+            logEl.dataset.lineIdx = (idx + 1).toString();
+            
+            // Limit lines
+            while (logEl.childNodes.length > 30) {
+              logEl.removeChild(logEl.firstChild);
+            }
+          }
+        }
+      });
+    }
+
+    // ----------------------------------------------------
+    // PANEL MORPHING & ORIENTATION CONTROLS (Design 1 & 2)
+    // ----------------------------------------------------
+    function setPanelLayout(mode) {
+      state.activeLayout = mode;
+      
+      const panelH = document.getElementById('panel-h');
+      const panelV = document.getElementById('panel-v');
+      
+      if (mode === 'h') {
+        panelH.style.display = 'flex';
+        panelV.style.display = 'none';
+        
+        // Reset variables
+        updateDesktopInsets();
+      } else {
+        panelH.style.display = 'none';
+        panelV.style.display = 'flex';
+        
+        // Reset expanded state
+        state.isVerticalExpanded = false;
+        panelV.classList.remove('expanded');
+        updateDesktopInsets();
+      }
+      
+      updateTaskList();
+      updateWorkspaceMaps();
+      
+      if (state.tilingEnabled) {
+        applyTilingLayout();
+      }
+
+      // Sync active button in Sim panel
+      const elements = document.querySelectorAll('.mode-btn');
+      elements.forEach(btn => btn.classList.toggle('active', btn.dataset.mode === mode));
+    }
+
+    function toggleAnchor() {
+      const panelH = document.getElementById('panel-h');
+      const anchorText = document.getElementById('sim-anchor-state');
+      
+      if (state.panelPosition === 'bottom') {
+        state.panelPosition = 'top';
+        panelH.classList.remove('anchor-bottom');
+        panelH.classList.add('anchor-top');
+        anchorText.textContent = 'Top';
+      } else {
+        state.panelPosition = 'bottom';
+        panelH.classList.remove('anchor-top');
+        panelH.classList.add('anchor-bottom');
+        anchorText.textContent = 'Bottom';
+      }
+      
+      updateDesktopInsets();
+      if (state.tilingEnabled) applyTilingLayout();
+    }
+
+    function updateDesktopInsets() {
+      const root = document.documentElement;
+      if (state.activeLayout === 'h') {
+        if (state.panelPosition === 'bottom') {
+          root.style.setProperty('--desktop-inset-top', '0px');
+          root.style.setProperty('--desktop-inset-bottom', 'var(--panel-h-height)');
+          root.style.setProperty('--desktop-inset-left', '0px');
+        } else {
+          root.style.setProperty('--desktop-inset-top', 'var(--panel-h-height)');
+          root.style.setProperty('--desktop-inset-bottom', '0px');
+          root.style.setProperty('--desktop-inset-left', '0px');
+        }
+      } else {
+        root.style.setProperty('--desktop-inset-top', '0px');
+        root.style.setProperty('--desktop-inset-bottom', '0px');
+        root.style.setProperty('--desktop-inset-left', 'var(--panel-v-width-compact)');
+      }
+    }
+
+    function toggleWindowLabels() {
+      state.windowLabelsEnabled = !state.windowLabelsEnabled;
+      document.getElementById('sim-labels-state').textContent = state.windowLabelsEnabled ? 'On' : 'Off';
+      updateTaskList();
+    }
+
+    function toggleVerticalExpand() {
+      const panelV = document.getElementById('panel-v');
+      state.isVerticalExpanded = !state.isVerticalExpanded;
+      
+      if (state.isVerticalExpanded) {
+        panelV.classList.add('expanded');
+      } else {
+        panelV.classList.remove('expanded');
+      }
+      updateTaskList();
+    }
+
+    // ----------------------------------------------------
+    // FUZZY SEARCH COMMAND PALETTE ENGINE
+    // ----------------------------------------------------
+    const commandItems = [
+      { name: 'Terminal', desc: 'Open command prompt', type: 'app', appType: 'terminal', icon: '⌨' },
+      { name: 'VS Code', desc: 'Open source text editor', type: 'app', appType: 'editor', icon: '💻' },
+      { name: 'Firefox', desc: 'Open web browser', type: 'app', appType: 'browser', icon: '🦊' },
+      { name: 'Spotify', desc: 'Open music sound player', type: 'app', appType: 'spotify', icon: '🎵' },
+      { name: 'Lock Screen', desc: 'Lock shell desktop session', type: 'action', actionKey: 'lock', icon: '🔒' },
+      { name: 'Log Out', desc: 'Terminate desktop compositor', type: 'action', actionKey: 'logout', icon: '⚡' },
+      { name: 'Toggle Tiling Layout', desc: 'Enable tiling master-stack', type: 'action', actionKey: 'tiling', icon: 'box' },
+      { name: 'Toggle Light Theme', desc: 'Switch Nocturne color token scheme', type: 'action', actionKey: 'theme', icon: '🌓' },
+      { name: 'Toggle Top/Bottom Position', desc: 'Relocate panel anchor edge', type: 'action', actionKey: 'anchor', icon: '↕' },
+      { name: 'Switch Design 1 (Horizontal)', desc: 'Set shell panel horizontal', type: 'layout', layoutKey: 'h', icon: '▬' },
+      { name: 'Switch Design 2 (Vertical)', desc: 'Set shell panel vertical', type: 'layout', layoutKey: 'v', icon: '▍' }
+    ];
+
+    let selectedResultIdx = 0;
+    let filteredResults = [];
+
+    function setupCommandModeSearch() {
+      const el = document.getElementById('hybrid-search-input');
+      if (!el) return;
+      
+      el.addEventListener('input', e => {
+        renderSearchResults(e.target.value);
+      });
+
+
+
+      el.addEventListener('keydown', e => {
+        const panelH = document.getElementById('panel-h');
+        if (e.key === 'ArrowUp') {
+          if (!state.isCommandExpanded) {
+            // Expand
+            state.isCommandExpanded = true;
+            panelH.classList.remove('command-inline');
+            panelH.classList.add('command-hybrid');
+            highlightSelectedResult();
+            e.preventDefault();
+          } else {
+            // Navigate list upwards
+            if (filteredResults.length > 0) {
+              selectedResultIdx = (selectedResultIdx - 1 + filteredResults.length) % filteredResults.length;
+              highlightSelectedResult();
+            }
+            e.preventDefault();
+          }
+        } else if (e.key === 'ArrowDown') {
+          if (state.isCommandExpanded) {
+            // Navigate list downwards
+            if (filteredResults.length > 0) {
+              selectedResultIdx = (selectedResultIdx + 1) % filteredResults.length;
+              highlightSelectedResult();
+            }
+            e.preventDefault();
+          }
+        } else if (e.key === 'ArrowLeft') {
+          if (!state.isCommandExpanded) {
+            // Navigate horizontal results in compact mode
+            if (filteredResults.length > 0) {
+              selectedResultIdx = (selectedResultIdx - 1 + filteredResults.length) % filteredResults.length;
+              highlightSelectedResult();
+            }
+            e.preventDefault();
+          }
+        } else if (e.key === 'ArrowRight') {
+          if (!state.isCommandExpanded) {
+            // Navigate horizontal results in compact mode
+            if (filteredResults.length > 0) {
+              selectedResultIdx = (selectedResultIdx + 1) % filteredResults.length;
+              highlightSelectedResult();
+            }
+            e.preventDefault();
+          }
+        } else if (e.key === 'Enter') {
+          if (state.isCommandExpanded) {
+            executeSelectedResult();
+          } else {
+            // Expand on Enter in compact mode
+            state.isCommandExpanded = true;
+            panelH.classList.remove('command-inline');
+            panelH.classList.add('command-hybrid');
+            highlightSelectedResult();
+          }
+          e.preventDefault();
+        } else if (e.key === 'Escape') {
+          if (state.isCommandExpanded) {
+            // Collapse back to compact
+            state.isCommandExpanded = false;
+            panelH.classList.remove('command-hybrid');
+            panelH.classList.add('command-inline');
+            highlightSelectedResult();
+          } else {
+            closeCommandMode();
+          }
+          e.preventDefault();
+        }
+      });
+    }
+
+    function toggleCommandMode() {
+      if (state.activeLayout === 'v') {
+        // Vertical layout defaults to morphing expanded search
+        toggleVerticalExpand();
+        setTimeout(() => {
+          const vSearch = document.getElementById('v-cmd-search');
+          if (vSearch) {
+            vSearch.focus();
+            vSearch.value = '';
+          }
+        }, 100);
+        return;
+      }
+
+      state.isCommandMode = !state.isCommandMode;
+      
+      if (state.isCommandMode) {
+        state.isCommandExpanded = false; // Starts compact
+        
+        const el = document.getElementById('hybrid-search-input');
+        if (el) el.value = '';
+        
+        const panelH = document.getElementById('panel-h');
+        panelH.classList.add('command-inline');
+        
+        setTimeout(() => {
+          if (el) el.focus();
+        }, 50);
+        
+        renderSearchResults('');
+      } else {
+        closeCommandMode();
+      }
+    }
+
+    function closeCommandMode() {
+      state.isCommandMode = false;
+      state.isCommandExpanded = false;
+      
+      const panelH = document.getElementById('panel-h');
+      panelH.classList.remove('command-inline');
+      panelH.classList.remove('command-hybrid');
+      
+      const el = document.getElementById('hybrid-search-input');
+      if (el) {
+        el.value = '';
+        el.blur();
+      }
+    }
+
+
+
+    function updateHybridPreview(item) {
+      const pane = document.getElementById('hybrid-preview-content');
+      if (!pane) return;
+      if (!item) {
+        pane.innerHTML = '<div style="text-align:center;color:var(--text-muted);font-size:12px;">No selection</div>';
+        return;
+      }
+      
+      let previewHtml = '';
+      if (item.type === 'app') {
+        previewHtml = `
+          <div style="display:flex; flex-direction:column; gap:12px; height:100%;">
+            <div style="display:flex; align-items:center; gap:12px;">
+              <div style="font-size:36px; background:var(--panel-bg-elevated); width:48px; height:48px; border-radius:10px; display:flex; align-items:center; justify-content:center; border:1px solid var(--border-hairline);">${item.icon}</div>
+              <div>
+                <h2 style="color:var(--text-primary); font-size:14px; font-weight:600; margin:0;">${item.name}</h2>
+                <span style="font-size:9px; text-transform:uppercase; background:var(--accent-tint); color:var(--accent); padding:1px 5px; border-radius:3px; font-weight:700; display:inline-block; margin-top:2px;">Application</span>
+              </div>
+            </div>
+            <p style="font-size:11px; color:var(--text-secondary); line-height:1.4; margin:4px 0 0 0;">${item.desc}</p>
+            <div style="margin-top:auto; font-size:11px; background:rgba(255,255,255,0.02); padding:8px; border-radius:6px; border:1px solid var(--border-hairline);">
+              <div style="display:flex; justify-content:space-between; margin-bottom:4px;"><span style="color:var(--text-muted);">Format:</span><span>Desktop client</span></div>
+              <div style="display:flex; justify-content:space-between;"><span style="color:var(--text-muted);">Process:</span><span>Single-instance</span></div>
+            </div>
+          </div>
+        `;
+      } else if (item.type === 'window') {
+        const w = state.windows.find(x => x.id === item.winId);
+        previewHtml = `
+          <div style="display:flex; flex-direction:column; gap:12px; height:100%;">
+            <div style="display:flex; align-items:center; gap:12px;">
+              <div style="font-size:36px; background:var(--panel-bg-elevated); width:48px; height:48px; border-radius:10px; display:flex; align-items:center; justify-content:center; border:1px solid var(--border-hairline);">${item.icon}</div>
+              <div>
+                <h2 style="color:var(--text-primary); font-size:14px; font-weight:600; margin:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:180px;">${w ? w.title : item.name}</h2>
+                <span style="font-size:9px; text-transform:uppercase; background:rgba(158, 206, 106, 0.15); color:var(--green); padding:1px 5px; border-radius:3px; font-weight:700; display:inline-block; margin-top:2px;">Running Surface</span>
+              </div>
+            </div>
+            <div style="margin-top:4px; font-size:10px; background:rgba(0,0,0,0.1); padding:8px; border-radius:6px; display:flex; flex-direction:column; gap:4px; border:1px solid var(--border-hairline);">
+              <div style="display:flex; justify-content:space-between;"><span style="color:var(--text-muted);">Workspace:</span><span>Workspace ${w ? w.workspace : '?'}</span></div>
+              <div style="display:flex; justify-content:space-between;"><span style="color:var(--text-muted);">Status:</span><span>${w && w.minimized ? 'Minimized' : 'Active'}</span></div>
+              <div style="display:flex; justify-content:space-between;"><span style="color:var(--text-muted);">Geometry:</span><span>${w ? `${w.width}x${w.height}` : '?'}</span></div>
+              <div style="display:flex; justify-content:space-between;"><span style="color:var(--text-muted);">PID ID:</span><span>0x${(w ? w.id : 0).toString(16).toUpperCase()}</span></div>
+            </div>
+            <div style="margin-top:auto; font-size:10px; color:var(--text-muted);">
+              Press <code style="font-family:var(--font-mono); color:var(--accent);">Enter</code> to switch to workspace ${w ? w.workspace : ''} and focus.
+            </div>
+          </div>
+        `;
+      } else if (item.type === 'action') {
+        previewHtml = `
+          <div style="display:flex; flex-direction:column; gap:12px; height:100%;">
+            <div style="display:flex; align-items:center; gap:12px;">
+              <div style="font-size:36px; background:var(--panel-bg-elevated); width:48px; height:48px; border-radius:10px; display:flex; align-items:center; justify-content:center; border:1px solid var(--border-hairline);">${item.icon}</div>
+              <div>
+                <h2 style="color:var(--text-primary); font-size:14px; font-weight:600; margin:0;">${item.name}</h2>
+                <span style="font-size:9px; text-transform:uppercase; background:rgba(247, 118, 142, 0.15); color:var(--red); padding:1px 5px; border-radius:3px; font-weight:700; display:inline-block; margin-top:2px;">System Action</span>
+              </div>
+            </div>
+            <p style="font-size:11px; color:var(--text-secondary); line-height:1.4; margin:4px 0 0 0;">${item.desc}</p>
+            <div style="margin-top:auto; font-size:10px; color:var(--text-muted); background:rgba(255,255,255,0.02); padding:8px; border-radius:6px; border:1px solid var(--border-hairline);">
+              Triggers a core shell function under MangoWC Compositor context.
+            </div>
+          </div>
+        `;
+      }
+      pane.innerHTML = previewHtml;
+    }
+
+    function renderSearchResults(query) {
+      let searchPool = [...commandItems];
+      state.windows.forEach(w => {
+        searchPool.push({
+          name: `${w.title} (Workspace ${w.workspace})`,
+          desc: 'Focus running surface',
+          type: 'window',
+          winId: w.id,
+          icon: appIcons[w.appType] || '📄'
+        });
+      });
+
+      filteredResults = searchPool.filter(item => {
+        return item.name.toLowerCase().includes(query.toLowerCase()) || 
+               item.desc.toLowerCase().includes(query.toLowerCase());
+      });
+
+      filteredResults.sort((a, b) => {
+        const priority = { app: 1, window: 2, action: 3, layout: 4 };
+        return (priority[a.type] || 5) - (priority[b.type] || 5);
+      });
+
+      const targetContainer = document.getElementById('hybrid-list-results');
+      const horizontalContainer = document.getElementById('hybrid-horizontal-results');
+      if (!targetContainer) return;
+
+      selectedResultIdx = 0;
+
+      if (filteredResults.length === 0) {
+        targetContainer.innerHTML = '<div style="padding: 12px; color: var(--text-muted); font-size: 11px;">No matches found</div>';
+        if (horizontalContainer) {
+          horizontalContainer.innerHTML = '<div style="color: var(--text-muted); font-size: 11px; padding-left: 8px;">No matches</div>';
+        }
+        const pane = document.getElementById('hybrid-preview-content');
+        if (pane) pane.innerHTML = '<div style="text-align:center; margin-top:60px; color:var(--text-muted);">No preview available</div>';
+        return;
+      }
+      
+      targetContainer.innerHTML = '';
+      filteredResults.forEach((item, idx) => {
+        const row = document.createElement('div');
+        row.className = 'hybrid-item-row';
+        row.onclick = (e) => {
+          e.stopPropagation();
+          selectedResultIdx = idx;
+          executeSelectedResult();
+        };
+
+        row.innerHTML = `
+          <div style="display:flex; align-items:center;">
+            <span class="icon">${item.icon}</span>
+            <span class="name">${item.name}</span>
+          </div>
+          <span style="font-size:9px; color:var(--text-muted); text-transform:uppercase;">${item.type}</span>
+        `;
+        
+        targetContainer.appendChild(row);
+      });
+
+      if (horizontalContainer) {
+        horizontalContainer.innerHTML = '';
+        filteredResults.forEach((item, idx) => {
+          const hItem = document.createElement('div');
+          hItem.className = 'result-item-h';
+          hItem.onclick = (e) => {
+            e.stopPropagation();
+            selectedResultIdx = idx;
+            executeSelectedResult();
+          };
+          hItem.innerHTML = `
+            <span class="icon">${item.icon}</span>
+            <span class="name">${item.name}</span>
+            <span class="type">${item.type}</span>
+          `;
+          horizontalContainer.appendChild(hItem);
+        });
+      }
+
+      highlightSelectedResult();
+    }
+
+    function highlightSelectedResult() {
+      const rows = document.querySelectorAll('.hybrid-item-row');
+      rows.forEach((row, idx) => {
+        row.classList.toggle('sel', idx === selectedResultIdx);
+        if (idx === selectedResultIdx) {
+          row.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
+        }
+      });
+
+      const hItems = document.querySelectorAll('.result-item-h');
+      hItems.forEach((hItem, idx) => {
+        hItem.classList.toggle('sel', idx === selectedResultIdx);
+        if (idx === selectedResultIdx) {
+          hItem.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
+        }
+      });
+
+      if (filteredResults[selectedResultIdx]) {
+        updateHybridPreview(filteredResults[selectedResultIdx]);
+      }
+    }
+
+    function executeSelectedResult() {
+      if (filteredResults.length === 0) return;
+      const selectedItem = filteredResults[selectedResultIdx];
+
+      closeCommandMode();
+
+      // Execute based on category
+      if (selectedItem.type === 'app') {
+        spawnWindow(selectedItem.appType);
+      } else if (selectedItem.type === 'window') {
+        focusWindow(selectedItem.winId);
+      } else if (selectedItem.type === 'action') {
+        if (selectedItem.actionKey === 'lock') triggerLockScreen();
+        else if (selectedItem.actionKey === 'logout') triggerLogout();
+        else if (selectedItem.actionKey === 'tiling') toggleTiling();
+        else if (selectedItem.actionKey === 'theme') toggleTheme();
+        else if (selectedItem.actionKey === 'anchor') toggleAnchor();
+      } else if (selectedItem.type === 'layout') {
+        setPanelLayout(selectedItem.layoutKey);
+      }
+    }
+
+    // Vertical panel morph search routing
+    function handleVerticalSearch(query) {
+      if (!query) return;
+      // In Design 2 (Vertical), simply routing matches to launch apps or trigger actions
+      const match = commandItems.find(item => item.name.toLowerCase().includes(query.toLowerCase()));
+      if (match && match.type === 'app') {
+        spawnWindow(match.appType);
+        document.getElementById('v-cmd-search').value = '';
+        toggleVerticalExpand();
+      }
+    }
+
+    // ----------------------------------------------------
+    // SYSTEM TRAY & QUICK SETTINGS POPUP
+    // ----------------------------------------------------
+    function toggleQuickSettings(e) {
+      e.stopPropagation();
+      const popup = document.getElementById('quick-settings');
+      const isVisible = popup.style.display === 'flex';
+      
+      if (isVisible) {
+        popup.style.display = 'none';
+      } else {
+        popup.style.display = 'flex';
+        
+        // Align popup above/below the tray based on layout orientation
+        const trayEl = state.activeLayout === 'h' ? document.querySelector('.tray') : document.getElementById('v-tray-container');
+        const trayRect = trayEl.getBoundingClientRect();
+        
+        if (state.activeLayout === 'h') {
+          popup.style.right = '16px';
+          popup.style.left = 'auto';
+          if (state.panelPosition === 'bottom') {
+            popup.style.bottom = `${varPanelHeight() + 8}px`;
+            popup.style.top = 'auto';
+          } else {
+            popup.style.top = `${varPanelHeight() + 8}px`;
+            popup.style.bottom = 'auto';
+          }
+        } else {
+          // Vertical layout settings position
+          popup.style.left = `${trayRect.right + 8}px`;
+          popup.style.right = 'auto';
+          popup.style.bottom = '16px';
+          popup.style.top = 'auto';
+        }
+      }
+    }
+
+    function varPanelHeight() {
+      if (state.isCommandMode) {
+        return state.isCommandExpanded ? 280 : 48;
+      }
+      return 48;
+    }
+
+    // Close popups on click outside
+    document.addEventListener('click', e => {
+      const qs = document.getElementById('quick-settings');
+      if (qs && qs.style.display === 'flex') {
+        if (!e.target.closest('.quick-settings') && !e.target.closest('.tray') && !e.target.closest('.v-tray')) {
+          qs.style.display = 'none';
+        }
+      }
+    });
+
+    function toggleWifi() {
+      state.wifiOn = !state.wifiOn;
+      const wifiBtn = document.getElementById('qs-wifi');
+      const indicators = [document.getElementById('tray-wifi'), document.getElementById('v-tray-wifi')];
+      
+      if (state.wifiOn) {
+        wifiBtn.classList.add('active');
+        wifiBtn.innerHTML = '<span>📶</span> Wifi: Connected';
+        indicators.forEach(i => { if (i) i.textContent = '📶'; });
+        triggerMockNotification('system', 'Network Interface Connected', 'Acquired DHCP lease on interface wlan0.');
+      } else {
+        wifiBtn.classList.remove('active');
+        wifiBtn.innerHTML = '<span>📶</span> Wifi: Off';
+        indicators.forEach(i => { if (i) i.textContent = '✈️'; });
+        triggerMockNotification('warning', 'Network Offline', 'Interface wlan0 disabled.');
+      }
+    }
+
+    function toggleBluetooth() {
+      state.bluetoothOn = !state.bluetoothOn;
+      const btBtn = document.getElementById('qs-bluetooth');
+      if (state.bluetoothOn) {
+        btBtn.classList.add('active');
+        triggerMockNotification('system', 'Bluetooth Radio Engaged', 'Adapter hci0 powered on, searching for peripherals.');
+      } else {
+        btBtn.classList.remove('active');
+        triggerMockNotification('system', 'Bluetooth Radio Offline', 'Adapter hci0 powered off.');
+      }
+    }
+
+    // ----------------------------------------------------
+    // THEME SWITCHER (Nocturne Token Variants)
+    // ----------------------------------------------------
+    function toggleTheme() {
+      const root = document.documentElement;
+      state.theme = state.theme === 'dark' ? 'light' : 'dark';
+      
+      if (state.theme === 'light') {
+        root.classList.add('light-theme');
+        triggerMockNotification('system', 'Tokyo Night Day Theme', 'Light token colors mapping applied.');
+      } else {
+        root.classList.remove('light-theme');
+        triggerMockNotification('system', 'Tokyo Night Night Theme', 'Default dark token colors mapping restored.');
+      }
+    }
+
+    // ----------------------------------------------------
+    // SOUND & BRIGHTNESS HUD CONTROLLER (EGL OSD)
+    // ----------------------------------------------------
+    let osdTimeout = null;
+
+    function adjustSound(amt) {
+      let nextV = state.volume + amt;
+      nextV = Math.max(0, Math.min(nextV, 100));
+      setVolume(nextV);
+    }
+
+    function setVolume(val) {
+      state.volume = parseInt(val);
+      
+      // Update sliders
+      document.getElementById('volume-slider').value = state.volume;
+      document.getElementById('qs-volume-val').textContent = `${state.volume}%`;
+      
+      // Update tray volume glyphs
+      const volumeGlyph = state.volume === 0 ? '🔇' : state.volume < 40 ? '🔈' : '🔊';
+      document.getElementById('tray-volume').textContent = volumeGlyph;
+      document.getElementById('v-tray-volume').textContent = volumeGlyph;
+
+      showOSD('🔊', state.volume);
+    }
+
+    function setBrightness(val) {
+      state.brightness = parseInt(val);
+      
+      // Update sliders
+      document.getElementById('brightness-slider').value = state.brightness;
+      document.getElementById('qs-brightness-val').textContent = `${state.brightness}%`;
+      
+      // Modify root opacity overlay for brightness feel
+      const rootOverlay = document.getElementById('desktop-root');
+      rootOverlay.style.filter = `brightness(${50 + state.brightness / 2}%)`;
+
+      showOSD('☀️', state.brightness);
+    }
+
+    function showOSD(icon, val) {
+      const osd = document.getElementById('osd-overlay');
+      document.getElementById('osd-icon').textContent = icon;
+      document.getElementById('osd-fill').style.width = `${val}%`;
+
+      osd.classList.add('visible');
+
+      clearTimeout(osdTimeout);
+      osdTimeout = setTimeout(() => {
+        osd.classList.remove('visible');
+      }, 1500);
+    }
+
+    // ----------------------------------------------------
+    // NOTIFICATIONS SYSTEM (macOS Toast Style)
+    // ----------------------------------------------------
+    const mockNotifs = [
+      { cat: 'system', title: 'Meson Build Completed', body: 'Successfully built target bin/myshell in 0.42s.' },
+      { cat: 'app', title: 'Spotify Now Playing', body: 'Home — Resonance (Synthwave Sunset Remaster)' },
+      { cat: 'warning', title: 'Battery Level Warning', body: 'Internal battery pack is at 15%. Connect power supply.' },
+      { cat: 'system', title: 'MangoWC Event Log', body: 'zwlr_layer_shell_v1 surface layout recalculated after viewport resizing.' }
+    ];
+    let mockIdx = 0;
+
+    function triggerMockNotification(cat = null, title = null, body = null) {
+      if (!cat) {
+        const item = mockNotifs[mockIdx % mockNotifs.length];
+        cat = item.cat;
+        title = item.title;
+        body = item.body;
+        mockIdx++;
+      }
+
+      const container = document.getElementById('notification-container');
+      
+      // Adjust alignment container class based on active shell panel orientation
+      container.className = 'notification-container';
+      if (state.activeLayout === 'h') {
+        if (state.panelPosition === 'bottom') {
+          container.classList.add('pos-br');
+        } else {
+          container.classList.add('pos-tr');
+        }
+      } else {
+        container.classList.add('pos-bl');
+      }
+
+      const toast = document.createElement('div');
+      toast.className = 'toast';
+      
+      const catIcon = cat === 'warning' ? '⚠️' : cat === 'app' ? '🎵' : '⚙️';
+      
+      toast.innerHTML = `
+        <div class="toast-icon">${catIcon}</div>
+        <div class="toast-content">
+          <div class="toast-title">${title}</div>
+          <div class="toast-body">${body}</div>
+          <div class="toast-details">Source: wlr-layer-shell ipc event listener daemon</div>
+        </div>
+      `;
+
+      container.appendChild(toast);
+      
+      // Trigger slide-in
+      setTimeout(() => {
+        toast.classList.add('visible');
+      }, 10);
+
+      // Setup dismiss timers
+      let dismissTimer = setTimeout(() => {
+        dismissToast(toast);
+      }, 5000);
+
+      // Hold on hover
+      toast.addEventListener('mouseenter', () => {
+        clearTimeout(dismissTimer);
+      });
+      toast.addEventListener('mouseleave', () => {
+        dismissTimer = setTimeout(() => {
+          dismissToast(toast);
+        }, 3000);
+      });
+
+      // Dismiss on click
+      toast.addEventListener('click', () => {
+        dismissToast(toast);
+      });
+    }
+
+    function dismissToast(toast) {
+      toast.style.transform = 'translateY(-20px) scale(0.9)';
+      toast.style.opacity = '0';
+      setTimeout(() => {
+        toast.remove();
+      }, 3500);
+    }
+
+    // ----------------------------------------------------
+    // LOCK SCREEN CONTROLLER
+    // ----------------------------------------------------
+    function triggerLockScreen() {
+      const lockScreen = document.getElementById('lock-screen');
+      lockScreen.style.display = 'flex';
+      state.isLocked = true;
+      document.getElementById('lock-input').value = '';
+      document.getElementById('lock-input').focus();
+    }
+
+    function handleUnlockKey(e) {
+      if (e.key === 'Enter') {
+        const lockScreen = document.getElementById('lock-screen');
+        // Smooth scale out
+        lockScreen.style.transform = 'scale(1.05)';
+        lockScreen.style.opacity = '0';
+        lockScreen.style.transition = 'all 0.35s cubic-bezier(0.16, 1, 0.3, 1)';
+        state.isLocked = false;
+        
+        setTimeout(() => {
+          lockScreen.style.display = 'none';
+          lockScreen.style.transform = '';
+          lockScreen.style.opacity = '';
+          lockScreen.style.transition = '';
+        }, 350);
+        
+        triggerMockNotification('system', 'Session Unlocked', 'Authenticated Alec session via standard login agent.');
+      }
+    }
+
+    // ----------------------------------------------------
+    // POWER SESSION DIALOG CONTROLLER
+    // ----------------------------------------------------
+    function triggerLogout() {
+      document.getElementById('logout-overlay').style.display = 'flex';
+    }
+
+    function closeLogout() {
+      document.getElementById('logout-overlay').style.display = 'none';
+    }
+
+    function restartDemo() {
+      // Reload page to reset state
+      window.location.reload();
+    }
+
+    // ----------------------------------------------------
+    // SIMULATOR COLLAPSE CONTROLLER
+    // ----------------------------------------------------
+    function toggleSimCollapse() {
+      const sim = document.getElementById('sim-panel');
+      const arrow = document.getElementById('sim-collapse-arrow');
+      
+      const isCollapsed = sim.classList.toggle('collapsed');
+      arrow.textContent = isCollapsed ? '▼' : '▲';
+    }
+
+    // ----------------------------------------------------
+    // KEYBOARD EVENT BINDINGS
+    // ----------------------------------------------------
+    document.addEventListener('keydown', e => {
+      // Escape closes modes
+      if (e.key === 'Escape') {
+        if (state.isCommandMode) closeCommandMode();
+        if (state.isVerticalExpanded) toggleVerticalExpand();
+        closeLogout();
+      }
+      
+      // Ctrl + Space toggles launcher search
+      if (e.key === ' ' && e.ctrlKey) {
+        if (state.activeLayout === 'h') {
+          toggleCommandMode();
+        } else {
+          toggleVerticalExpand();
+          document.getElementById('v-cmd-search').focus();
+        }
+        e.preventDefault();
+      }
+
+      // Super + Enter spawns terminal (simulated with Alt + Enter for browser ease)
+      if (e.key === 'Enter' && e.altKey) {
+        spawnWindow('terminal');
+        e.preventDefault();
+      }
+
+      // Alt + Tab cycles workspaces
+      if (e.key === 'Tab' && e.altKey) {
+        const nextWS = (state.activeWorkspace % 4) + 1;
+        switchWorkspace(nextWS);
+        e.preventDefault();
+      }
+    });
+
+  </script>
+</body>
+</html>

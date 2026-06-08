@@ -5,7 +5,7 @@
 #include <cstdio>
 
 Label::Label(NVGcontext* ctx, int fontHandle, const std::string& text)
-    : ctx_(ctx), fontHandle_(fontHandle), color_(nvgRGBA(0,0,0,0)), text_(text) {
+    : ctx_(ctx), fontHandle_(fontHandle), color_(nvgRGBA(192,202,245,255)), text_(text) {
     recalcPreferred();
 }
 
