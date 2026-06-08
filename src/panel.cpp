@@ -4,12 +4,13 @@
 #include "clock.hpp"
 #include "battery_service.hpp"
 #include "battery_widget.hpp"
+#include "workspace_switcher.hpp"
 #include <wayland-client-protocol.h>
 #include <wayland-egl-core.h>
 #include <cstdio>
 
-Panel::Panel(Theme& theme, Egl& egl, wl_compositor* compositor, zwlr_layer_shell_v1* shell, wl_output* output, const char* name, BatteryService* batteryService)
-    : egl_(egl), theme_(theme), batteryService_(batteryService) {
+Panel::Panel(Theme& theme, Egl& egl, wl_compositor* compositor, zwlr_layer_shell_v1* shell, wl_output* output, const char* name, BatteryService* batteryService, WorkspaceService* workspaceService)
+    : egl_(egl), theme_(theme), output_(output), batteryService_(batteryService), workspaceService_(workspaceService) {
     surface_ = wl_compositor_create_surface(compositor);
     layer_surface_ = zwlr_layer_shell_v1_get_layer_surface(shell, surface_, output, ZWLR_LAYER_SHELL_V1_LAYER_TOP, name);
 
@@ -39,13 +40,21 @@ Panel::~Panel() {
 void Panel::setScale(int scale) {
     scale_ = static_cast<float>(scale > 0 ? scale : 1);
     if (renderer_) renderer_->setPixelRatio(scale_);
+    if (egl_window_) {
+        wl_surface_set_buffer_scale(surface_, scale > 0 ? scale : 1);
+        wl_egl_window_resize(egl_window_, width_ * scale, height_ * scale, 0, 0);
+        dirty_ = true;
+    }
 }
 
 void Panel::resize(int w, int h) {
     width_  = w > 0 ? w : width_;
     height_ = h > 0 ? h : HEIGHT;
+    int physW = width_  * static_cast<int>(scale_);
+    int physH = height_ * static_cast<int>(scale_);
     if (!egl_window_) {
-        egl_window_  = wl_egl_window_create(surface_, width_, height_);
+        wl_surface_set_buffer_scale(surface_, static_cast<int32_t>(scale_));
+        egl_window_  = wl_egl_window_create(surface_, physW, physH);
         egl_surface_ = eglCreateWindowSurface(egl_.display(), egl_.config(), (EGLNativeWindowType)egl_window_, nullptr);
         if (!renderer_) {
             renderer_ = std::make_unique<Renderer>(theme_, egl_);
@@ -60,6 +69,11 @@ void Panel::resize(int w, int h) {
 
             root_ = std::make_unique<BoxLayout>(BoxOrientation::Horizontal,
                                                 theme_.gapItem, theme_.panelPad);
+            if (workspaceService_) {
+                auto switcher = std::make_unique<WorkspaceSwitcher>(theme_, fontH >= 0 ? fontH : 0, output_, *workspaceService_);
+                switcher->setCallback([this] { requestRedraw(); });
+                root_->addChild(std::move(switcher));
+            }
             root_->addSpacer();
             if (batteryService_) {
                 auto battery = std::make_unique<BatteryWidget>(theme_, renderer_->ctx(), fontH >= 0 ? fontH : 0, *batteryService_);
@@ -74,7 +88,7 @@ void Panel::resize(int w, int h) {
             root_->addChild(std::move(clock));
         }
     } else {
-        wl_egl_window_resize(egl_window_, width_, height_, 0, 0);
+        wl_egl_window_resize(egl_window_, physW, physH, 0, 0);
     }
     configured_ = true;
     dirty_ = true;

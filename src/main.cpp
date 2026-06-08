@@ -71,7 +71,7 @@ class App {
 
 void App::create_panel(Output& o) {
     if (!compositor_ || !layer_shell_) return;
-    o.panel = std::make_unique<Panel>(theme_, egl_, compositor_, layer_shell_, o.wl, o.name[0] ? o.name : "panel", batteryService_.get());
+    o.panel = std::make_unique<Panel>(theme_, egl_, compositor_, layer_shell_, o.wl, o.name[0] ? o.name : "panel", batteryService_.get(), workspaceService_.get());
     o.panel->setScale(o.scale);
 }
 
@@ -85,6 +85,10 @@ void App::reg_global(void* data, wl_registry* r, uint32_t name, const char* ifac
         self->toplevel_manager_ = (zwlr_foreign_toplevel_manager_v1*)wl_registry_bind(r, name, &zwlr_foreign_toplevel_manager_v1_interface, 3);
     } else if (strcmp(iface, zdwl_ipc_manager_v2_interface.name) == 0) {
         self->dwl_ipc_manager_ = (zdwl_ipc_manager_v2*)wl_registry_bind(r, name, &zdwl_ipc_manager_v2_interface, 2);
+        self->workspaceService_ = std::make_unique<WorkspaceService>(self->dwl_ipc_manager_);
+        self->workspaceService_->init();
+        for (auto& o : self->outputs_)
+            self->workspaceService_->add_output(o->wl);
     } else if (strcmp(iface, wl_output_interface.name) == 0) {
         uint32_t v = version < 4 ? version : 4;
         auto o = std::make_unique<Output>();
@@ -141,14 +145,6 @@ bool App::init() {
     if (toplevel_manager_) {
         toplevelService_ = std::make_unique<ToplevelService>(toplevel_manager_);
         toplevelService_->init();
-    }
-
-    if (dwl_ipc_manager_) {
-        workspaceService_ = std::make_unique<WorkspaceService>(dwl_ipc_manager_);
-        workspaceService_->init();
-        for (auto& o : outputs_) {
-            workspaceService_->add_output(o->wl);
-        }
     }
 
     for (auto& o : outputs_) create_panel(*o);

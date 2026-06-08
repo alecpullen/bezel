@@ -289,12 +289,12 @@ M1 (Foundation) ──── DONE
 
 #### 4.4 Workspace switcher widget
 
-- [ ] Create `WorkspaceSwitcher` widget:
+- [x] Create `WorkspaceSwitcher` widget:
   - Subscribes to `WorkspaceService`
   - **Tiling-map mode** (default when layout data available): renders 36×26 boxes per workspace. Each box draws proportional sub-rectangles (darker fill) mirroring window layout. Active workspace gets accent border + brighter fill. Click-to-focus (pointer input deferred to M5/M9).
   - **Flat-icons mode** (fallback): renders numbered/lettered workspace pips. Active pip filled with accent.
   - Hit regions stored for future click handling (`mappedWorkspaces[i].bounds`)
-- [ ] Layout: inserted after the launcher trigger tile (M5), before the window list
+- [x] Layout: inserted after the launcher trigger tile (M5), before the window list
 
 #### 4.5 Window list widget
 

@@ -33,6 +33,7 @@ void Renderer::destroy() {
 
 void Renderer::beginFrame(int panelWidth, int panelHeight) {
     eglMakeCurrent(egl_.display(), eglSurface_, eglSurface_, egl_.context());
+    glViewport(0, 0, (int)(panelWidth * pixelRatio_), (int)(panelHeight * pixelRatio_));
     nvgBeginFrame(ctx_, panelWidth, panelHeight, pixelRatio_);
 }
 

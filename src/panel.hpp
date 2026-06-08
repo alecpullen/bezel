@@ -12,12 +12,14 @@
 
 class Egl;
 class BatteryService;
+class WorkspaceService;
 class Clock;
 
 class Panel {
 public:
     Panel(Theme& theme, Egl& egl, wl_compositor* compositor, zwlr_layer_shell_v1* shell,
-          wl_output* output, const char* name, BatteryService* batteryService);
+          wl_output* output, const char* name, BatteryService* batteryService,
+          WorkspaceService* workspaceService);
     ~Panel();
 
     void setScale(int scale);
@@ -34,7 +36,9 @@ private:
 
     Egl&                   egl_;
     Theme&                 theme_;
+    wl_output*             output_        = nullptr;
     BatteryService*        batteryService_ = nullptr;
+    WorkspaceService*      workspaceService_ = nullptr;
     wl_surface*            surface_       = nullptr;
     zwlr_layer_surface_v1* layer_surface_ = nullptr;
     wl_egl_window*         egl_window_    = nullptr;

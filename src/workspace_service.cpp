@@ -38,6 +38,12 @@ void WorkspaceService::add_output(wl_output* output) {
     data->wl_output_ptr = output;
     data->dwl_output = zdwl_ipc_manager_v2_get_output(manager_, output);
 
+    if (tag_count_ > 0) {
+        data->pending.workspaces.resize(tag_count_);
+        for (uint32_t i = 0; i < tag_count_; ++i)
+            data->pending.workspaces[i].index = i;
+    }
+
     static const zdwl_ipc_output_v2_listener listener = {
         .toggle_visibility = on_output_toggle_visibility,
         .active = on_output_active,
