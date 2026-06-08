@@ -7,3 +7,5 @@
 #define namespace namespace_
 #include "wlr-layer-shell-unstable-v1-client-protocol.h"
 #undef namespace
+#include "wlr-foreign-toplevel-management-unstable-v1-client-protocol.h"
+#include "dwl-ipc-unstable-v2-client-protocol.h"

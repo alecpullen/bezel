@@ -21,6 +21,10 @@ protocols = [
   [wl_protos_dir / 'stable/xdg-shell/xdg-shell.xml', 'xdg-shell'],
   [meson.project_source_root() / 'protocols/wlr-layer-shell-unstable-v1.xml',
    'wlr-layer-shell-unstable-v1'],
+  [meson.project_source_root() / 'protocols/wlr-foreign-toplevel-management-unstable-v1.xml',
+   'wlr-foreign-toplevel-management-unstable-v1'],
+  [meson.project_source_root() / 'protocols/dwl-ipc-unstable-v2.xml',
+   'dwl-ipc-unstable-v2'],
 ]
 
 gen = []
