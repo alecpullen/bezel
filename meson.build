@@ -36,7 +36,7 @@ endforeach
 executable('myshell',
            ['src/main.cpp', 'src/egl.cpp', 'src/panel.cpp',
             'src/renderer.cpp', 'src/font_cache.cpp', 'src/clock.cpp',
-            'src/layout.cpp', 'src/label.cpp',
+            'src/layout.cpp', 'src/label.cpp', 'src/battery_service.cpp',
             'src/nanovg_shim.cpp', gen],
            dependencies : [wl_client, wl_egl, egl, glesv2,
                             freetype, harfbuzz, nanovg, sdbus_cpp],
