@@ -29,6 +29,7 @@ public:
 private:
     Theme& theme_;
     Egl& egl_;
+    EGLSurface eglSurface_ = EGL_NO_SURFACE;
     NVGcontext* ctx_ = nullptr;
     float pixelRatio_ = 1.0f;
 };

@@ -63,7 +63,7 @@ void Label::recalcPreferred() {
         return;
     }
 
-    if (fontHandle_ > 0) nvgFontFaceId(ctx_, fontHandle_);
+    if (fontHandle_ >= 0) nvgFontFaceId(ctx_, fontHandle_);
     nvgFontSize(ctx_, fontSize_);
     float bounds[4];
     nvgTextBounds(ctx_, 0, 0, text_.c_str(), nullptr, bounds);

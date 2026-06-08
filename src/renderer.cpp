@@ -11,7 +11,8 @@ Renderer::Renderer(Theme& theme, Egl& egl) : theme_(theme), egl_(egl) {}
 
 bool Renderer::init(EGLSurface eglSurface) {
     if (!egl_.display() || !egl_.context()) return false;
-    if (!eglMakeCurrent(egl_.display(), eglSurface, eglSurface, egl_.context()))
+    eglSurface_ = eglSurface;
+    if (!eglMakeCurrent(egl_.display(), eglSurface_, eglSurface_, egl_.context()))
         return false;
 
     ctx_ = nvgCreateGLES2(NVG_ANTIALIAS | NVG_STENCIL_STROKES);
@@ -31,6 +32,7 @@ void Renderer::destroy() {
 }
 
 void Renderer::beginFrame(int panelWidth, int panelHeight) {
+    eglMakeCurrent(egl_.display(), eglSurface_, eglSurface_, egl_.context());
     nvgBeginFrame(ctx_, panelWidth, panelHeight, pixelRatio_);
 }
 
