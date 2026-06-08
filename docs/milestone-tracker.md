@@ -269,7 +269,7 @@ M1 (Foundation) ──── DONE
 
 #### 4.2 Foreign toplevel service
 
-- [ ] Create `ToplevelService : public Service`:
+- [x] Create `ToplevelService : public Service`:
   - Binds `zwlr_foreign_toplevel_manager_v1` from registry
   - Listens for `toplevel` creation events → tracks `Toplevel` objects (title, app_id, state)
   - Listens for `finished` events → removes from the list

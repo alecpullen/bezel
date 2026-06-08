@@ -15,6 +15,7 @@
 #include "renderer.hpp"
 #include "font_cache.hpp"
 #include "battery_service.hpp"
+#include "toplevel_service.hpp"
 
 struct Output {
     wl_output* wl       = nullptr;
@@ -52,6 +53,7 @@ class App {
         wl_registry*         registry_    = nullptr;
         wl_compositor*       compositor_  = nullptr;
         zwlr_layer_shell_v1* layer_shell_ = nullptr;
+        zwlr_foreign_toplevel_manager_v1* toplevel_manager_ = nullptr;
         Egl                  egl_;
         Theme                theme_ = Theme::defaultTheme();
         std::vector<std::unique_ptr<Output>> outputs_;
@@ -59,6 +61,7 @@ class App {
         bool                 running_     = true;
         std::unique_ptr<sdbus::IConnection> dbusConn_;
         std::unique_ptr<BatteryService> batteryService_;
+        std::unique_ptr<ToplevelService> toplevelService_;
 
         void tick();
 };
@@ -75,6 +78,8 @@ void App::reg_global(void* data, wl_registry* r, uint32_t name, const char* ifac
         self->compositor_ = (wl_compositor*)wl_registry_bind(r, name, &wl_compositor_interface, 4);
     } else if (strcmp(iface, zwlr_layer_shell_v1_interface.name) == 0) {
         self->layer_shell_ = (zwlr_layer_shell_v1*)wl_registry_bind(r, name, &zwlr_layer_shell_v1_interface, 1);
+    } else if (strcmp(iface, zwlr_foreign_toplevel_manager_v1_interface.name) == 0) {
+        self->toplevel_manager_ = (zwlr_foreign_toplevel_manager_v1*)wl_registry_bind(r, name, &zwlr_foreign_toplevel_manager_v1_interface, 3);
     } else if (strcmp(iface, wl_output_interface.name) == 0) {
         uint32_t v = version < 4 ? version : 4;
         auto o = std::make_unique<Output>();
@@ -123,6 +128,11 @@ bool App::init() {
         }
     } catch (const sdbus::Error& e) {
         fprintf(stderr, "Warning: Failed to connect to D-Bus system bus: %s\n", e.what());
+    }
+
+    if (toplevel_manager_) {
+        toplevelService_ = std::make_unique<ToplevelService>(toplevel_manager_);
+        toplevelService_->init();
     }
 
     for (auto& o : outputs_) create_panel(*o);
@@ -180,6 +190,9 @@ void App::run() {
             if (batteryService_) {
                 batteryService_->tick();
             }
+            if (toplevelService_) {
+                toplevelService_->tick();
+            }
         } else {
             struct pollfd fds[1] = {{wlFd, POLLIN, 0}};
             int ret = poll(fds, 1, 1000);
@@ -194,6 +207,10 @@ void App::run() {
                 }
             } else {
                 wl_display_cancel_read(display_);
+            }
+
+            if (toplevelService_) {
+                toplevelService_->tick();
             }
         }
         
@@ -217,6 +234,7 @@ void App::tick() {
 
 void App::finish() {
     outputs_.clear();
+    toplevelService_.reset();
     if (layer_shell_) zwlr_layer_shell_v1_destroy(layer_shell_);
     if (compositor_) wl_compositor_destroy(compositor_);
     egl_.finish();
