@@ -16,6 +16,7 @@
 #include "renderer.hpp"
 #include "font_cache.hpp"
 #include "battery_service.hpp"
+#include "desktop_index.hpp"
 #include "toplevel_service.hpp"
 #include "workspace_service.hpp"
 
@@ -78,9 +79,10 @@ class App {
         bool                 ready_        = false;
         bool                 running_      = true;
         std::unique_ptr<sdbus::IConnection> dbusConn_;
-        std::unique_ptr<BatteryService> batteryService_;
-        std::unique_ptr<ToplevelService> toplevelService_;
+        std::unique_ptr<BatteryService>   batteryService_;
+        std::unique_ptr<ToplevelService>  toplevelService_;
         std::unique_ptr<WorkspaceService> workspaceService_;
+        std::unique_ptr<DesktopIndex>     desktopIndex_;
 
         void tick();
 };
@@ -223,6 +225,9 @@ bool App::init() {
         return false;
     }
     if (!egl_.init(display_)) return false;
+
+    desktopIndex_ = std::make_unique<DesktopIndex>();
+    desktopIndex_->scan();
 
     try {
         dbusConn_ = sdbus::createSystemBusConnection();
