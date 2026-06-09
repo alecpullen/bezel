@@ -18,6 +18,7 @@
 #include "battery_service.hpp"
 #include "control_socket.hpp"
 #include "desktop_index.hpp"
+#include "search_engine.hpp"
 #include "toplevel_service.hpp"
 #include "workspace_service.hpp"
 
@@ -84,6 +85,7 @@ class App {
         std::unique_ptr<ToplevelService>  toplevelService_;
         std::unique_ptr<WorkspaceService> workspaceService_;
         std::unique_ptr<DesktopIndex>     desktopIndex_;
+        std::unique_ptr<SearchEngine>     searchEngine_;
         std::unique_ptr<ControlSocket>    controlSocket_;
 
         void handleSocketCommand(std::string_view cmd);
@@ -231,6 +233,7 @@ bool App::init() {
 
     desktopIndex_ = std::make_unique<DesktopIndex>();
     desktopIndex_->scan();
+    searchEngine_ = std::make_unique<SearchEngine>(*desktopIndex_, toplevelService_.get());
 
     controlSocket_ = std::make_unique<ControlSocket>();
     if (!controlSocket_->init())
@@ -332,7 +335,12 @@ void App::run() {
 
 void App::handleSocketCommand(std::string_view cmd) {
     if (cmd == "toggle_launcher") {
-        fprintf(stderr, "control socket: toggle_launcher (not yet implemented)\n");
+        if (searchEngine_) {
+            auto results = searchEngine_->query("a");
+            fprintf(stderr, "toggle_launcher: %zu results for query 'a'\n", results.size());
+            for (size_t i = 0; i < results.size() && i < 5; ++i)
+                fprintf(stderr, "  [%d] %s (%s)\n", results[i].score, results[i].name.c_str(), results[i].subtitle.c_str());
+        }
     } else {
         fprintf(stderr, "control socket: unknown command '%.*s'\n",
                 (int)cmd.size(), cmd.data());

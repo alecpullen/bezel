@@ -158,7 +158,7 @@ M1 (Foundation) ──── DONE
 #### 2.6 Per-panel layout
 
 - [ ] Each `Panel` owns a root `BoxLayout` widget
-- [ ] `Panel::render()` calls `root->layout(0, 0, width, height)` → `root->render(renderer)`
+- [ ] `Panel::render ()` calls `root->layout(0, 0, width, height)` → `root->render(renderer)`
 - [ ] Each output gets an identical widget tree (clock duplicated per spec §3.4)
 
 ### Deliverables
