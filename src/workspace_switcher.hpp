@@ -6,10 +6,16 @@
 
 class WorkspaceSwitcher : public Widget {
 public:
+    struct WorkspaceBounds {
+        int index;
+        int x, y, w, h;
+    };
+
     WorkspaceSwitcher(const Theme& theme, int fontHandle, wl_output* output, WorkspaceService& service);
     ~WorkspaceSwitcher() override;
 
     void setCallback(std::function<void()> cb);
+    const std::vector<WorkspaceBounds>& hitRegions() const { return hitRegions_; }
 
     int preferredWidth() const override;
     int preferredHeight() const override;
@@ -28,4 +34,5 @@ private:
     std::function<void()> callback_;
     int subId_       = -1;
     int viewOffset_  = 0;
+    mutable std::vector<WorkspaceBounds> hitRegions_;
 };

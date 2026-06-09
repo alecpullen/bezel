@@ -57,6 +57,8 @@ void WorkspaceSwitcher::render(const Renderer& renderer) const {
     const auto* state = service_.get_output_state(output_);
     if (!state || state->workspaces.empty()) return;
 
+    hitRegions_.clear();
+
     NVGcontext* vg = renderer.ctx();
     float curX = (float)x_;
     float pillW = theme_.workspaceMapW;
@@ -87,21 +89,33 @@ void WorkspaceSwitcher::render(const Renderer& renderer) const {
             nvgStroke(vg);
         }
 
-        // Draw index text centered
-        char buf[8];
-        std::snprintf(buf, sizeof(buf), "%u", ws.index + 1);
-        nvgFontSize(vg, theme_.labelSecondaryPx);
-        nvgFontFaceId(vg, fontHandle_);
-        nvgTextAlign(vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-        
-        if (ws.focused || ws.state == 1) {
-            nvgFillColor(vg, theme_.textPrimary);
-        } else if (ws.clients > 0) {
-            nvgFillColor(vg, theme_.textSecondary);
+        hitRegions_.push_back({(int)ws.index, (int)curX, (int)centerY, (int)pillW, (int)pillH});
+
+        if (theme_.workspaceMode == Theme::WorkspaceMode::Tiling && !ws.tiles.empty()) {
+            for (const auto& tile : ws.tiles) {
+                nvgBeginPath(vg);
+                nvgRect(vg, curX + tile.x * pillW, centerY + tile.y * pillH,
+                        tile.w * pillW, tile.h * pillH);
+                nvgFillColor(vg, nvgRGBA(255, 255, 255, 40));
+                nvgFill(vg);
+            }
         } else {
-            nvgFillColor(vg, theme_.textMuted);
+            // Flat-icons fallback: draw index text centered
+            char buf[8];
+            std::snprintf(buf, sizeof(buf), "%u", ws.index + 1);
+            nvgFontSize(vg, theme_.labelSecondaryPx);
+            nvgFontFaceId(vg, fontHandle_);
+            nvgTextAlign(vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+
+            if (ws.focused || ws.state == 1) {
+                nvgFillColor(vg, theme_.textPrimary);
+            } else if (ws.clients > 0) {
+                nvgFillColor(vg, theme_.textSecondary);
+            } else {
+                nvgFillColor(vg, theme_.textMuted);
+            }
+            nvgText(vg, curX + pillW / 2.0f, centerY + pillH / 2.0f, buf, nullptr);
         }
-        nvgText(vg, curX + pillW / 2.0f, centerY + pillH / 2.0f, buf, nullptr);
 
         curX += pillW + theme_.gapItem;
     }

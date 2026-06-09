@@ -42,6 +42,8 @@ struct Theme {
     float gapItem;
     float iconInline;
 
+    enum class WorkspaceMode { Tiling, Flat } workspaceMode = WorkspaceMode::Tiling;
+
     static NVGcolor hex(uint32_t hex) {
         return nvgRGBA(
             static_cast<unsigned char>((hex >> 16) & 0xFF),

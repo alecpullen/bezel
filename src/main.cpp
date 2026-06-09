@@ -197,15 +197,6 @@ void App::run() {
             }
             
             dbusConn_->processPendingEvent();
-            if (batteryService_) {
-                batteryService_->tick();
-            }
-            if (toplevelService_) {
-                toplevelService_->tick();
-            }
-            if (workspaceService_) {
-                workspaceService_->tick();
-            }
         } else {
             struct pollfd fds[1] = {{wlFd, POLLIN, 0}};
             int ret = poll(fds, 1, 1000);
@@ -221,17 +212,23 @@ void App::run() {
             } else {
                 wl_display_cancel_read(display_);
             }
-
-            if (toplevelService_) {
-                toplevelService_->tick();
-            }
-            if (workspaceService_) {
-                workspaceService_->tick();
-            }
         }
         
         if (wl_display_dispatch_pending(display_) < 0) {
             break;
+        }
+        
+        if (dbusConn_) {
+            dbusConn_->processPendingEvent();
+        }
+        if (batteryService_) {
+            batteryService_->tick();
+        }
+        if (toplevelService_) {
+            toplevelService_->tick();
+        }
+        if (workspaceService_) {
+            workspaceService_->tick();
         }
         
         tick();

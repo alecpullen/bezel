@@ -6,11 +6,16 @@
 #include <map>
 #include <memory>
 
+struct Rect {
+    float x, y, w, h; // proportional 0.0–1.0 within the workspace box
+};
+
 struct WorkspaceInfo {
     uint32_t index;
     uint32_t state; // active, urgent, none
     uint32_t clients;
     bool focused;
+    std::vector<Rect> tiles; // proportional window rects for tiling-map mode
 };
 
 struct OutputWorkspaceState {

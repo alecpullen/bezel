@@ -79,8 +79,8 @@ void Toplevel::on_closed(void* data, zwlr_foreign_toplevel_handle_v1*) {
 }
 
 void Toplevel::on_parent(void* data, zwlr_foreign_toplevel_handle_v1*, zwlr_foreign_toplevel_handle_v1* parent) {
-    (void)data; (void)parent;
-    // Parent handling can be added if needed
+    auto* self = static_cast<Toplevel*>(data);
+    self->info_.parent = parent;
 }
 
 ToplevelService::ToplevelService(zwlr_foreign_toplevel_manager_v1* manager)

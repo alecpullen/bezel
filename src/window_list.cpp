@@ -3,13 +3,14 @@
 #include <nanovg.h>
 #include <algorithm>
 
-static constexpr float ICON_SIZE   = 16.0f;
-static constexpr float ICON_PAD    = 6.0f;  // gap from button edge to icon left
-static constexpr float ICON_TEXT_GAP = 4.0f; // gap between icon and text
+static constexpr float ICON_SIZE     = 24.0f;
+static constexpr float ICON_PAD      = 16.0f; // gap from button edge to icon left
+static constexpr float ICON_TEXT_GAP = 10.0f; // gap between icon and text
+static constexpr float BUTTON_WIDTH  = 160.0f;
 
 WindowList::WindowList(const Theme& theme, int fontHandle, NVGcontext* ctx,
-                       wl_output* output, ToplevelService& service)
-    : theme_(theme), fontHandle_(fontHandle), output_(output), service_(service) {
+                       wl_output* output, ToplevelService& service, int panelHeight)
+    : theme_(theme), fontHandle_(fontHandle), output_(output), service_(service), panelHeight_(panelHeight) {
     if (ctx)
         iconLoader_ = std::make_unique<IconLoader>(ctx);
     subId_ = service_.subscribe([this] {
@@ -43,15 +44,10 @@ int WindowList::preferredWidth() const {
     if (visible.empty()) return 0;
 
     int count = (int)visible.size();
-    static constexpr int MIN_BTN_W = 60;
-    static constexpr int MAX_BTN_W = 200;
-    static constexpr int ABSOLUTE_MAX_VISIBLE = 20;
+    static constexpr int MAX_VISIBLE_FOR_PREF = 20;
 
-    int maxVisible = std::min(ABSOLUTE_MAX_VISIBLE, std::max(1, w_ / MIN_BTN_W));
-    count = std::min(count, maxVisible);
-
-    float btnW = std::min((float)w_ / (float)count, (float)MAX_BTN_W);
-    return static_cast<int>(count * btnW);
+    count = std::min(count, MAX_VISIBLE_FOR_PREF);
+    return static_cast<int>(count * BUTTON_WIDTH);
 }
 
 void WindowList::render(const Renderer& renderer) const {
@@ -59,8 +55,7 @@ void WindowList::render(const Renderer& renderer) const {
     if (visible.empty() || w_ <= 0) return;
 
     int count = (int)visible.size();
-    int minBtnW = 60;
-    int maxVisible = std::max(1, w_ / minBtnW);
+    int maxVisible = std::max(1, static_cast<int>(w_ / BUTTON_WIDTH));
     if (count > maxVisible) {
         auto activeIt = std::find_if(visible.begin(), visible.end(),
             [](const ToplevelInfo* i) { return i->activated; });
@@ -70,30 +65,33 @@ void WindowList::render(const Renderer& renderer) const {
         count = maxVisible;
     }
 
-    static constexpr float MAX_BTN_W = 200.0f;
-    float btnW = std::min((float)w_ / (float)count, MAX_BTN_W);
     NVGcontext* vg = renderer.ctx();
     float curX = (float)x_;
     for (const auto* info : visible) {
-        drawButton(vg, curX, btnW, *info);
-        curX += btnW;
+        drawButton(vg, curX, BUTTON_WIDTH, *info);
+        curX += BUTTON_WIDTH;
     }
+}
+
+static std::string appName(const ToplevelInfo& info) {
+    if (!info.app_id.empty()) return info.app_id;
+    return info.title;
 }
 
 void WindowList::drawButton(NVGcontext* vg, float btnX, float btnW,
                              const ToplevelInfo& info) const {
-    float pad = 4.0f;
+    float padY = (panelHeight_ - h_) / 2.0f;
+    float fillTop = (float)y_ - padY;
 
     if (info.activated) {
         nvgBeginPath(vg);
-        nvgRoundedRect(vg, btnX + pad, (float)y_ + pad,
-                       btnW - 2*pad, (float)h_ - 2*pad, theme_.radiusTile);
+        nvgRect(vg, btnX, fillTop, btnW, (float)panelHeight_);
         nvgFillColor(vg, theme_.panelBgElevated);
         nvgFill(vg);
     }
 
     // App icon (if available)
-    float textStartX = btnX + 8.0f;
+    float textStartX = btnX + ICON_PAD;
     if (iconLoader_) {
         int img = iconLoader_->get(info.app_id);
         if (img >= 0) {
@@ -108,19 +106,19 @@ void WindowList::drawButton(NVGcontext* vg, float btnX, float btnW,
         }
     }
 
-    // Title text, vertically centred, ellipsized
+    // App name text, vertically centred, ellipsized
     nvgFontFaceId(vg, fontHandle_);
     nvgFontSize(vg, theme_.labelPrimaryPx);
     nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
     nvgFillColor(vg, info.activated ? theme_.textPrimary : theme_.textSecondary);
-    float textEndX = btnX + btnW - 8.0f;
+    float textEndX = btnX + btnW - ICON_PAD;
     drawEllipsized(vg, textStartX, (float)y_ + (float)h_ / 2.0f,
-                   textEndX - textStartX, info.title);
+                   textEndX - textStartX, appName(info));
 
     // 2px accent underline at bottom for active window
     if (info.activated) {
         nvgBeginPath(vg);
-        nvgRect(vg, btnX + pad, (float)y_ + (float)h_ - 2.0f, btnW - 2*pad, 2.0f);
+        nvgRect(vg, btnX, fillTop + panelHeight_ - 2.0f, btnW, 2.0f);
         nvgFillColor(vg, theme_.accent);
         nvgFill(vg);
     }

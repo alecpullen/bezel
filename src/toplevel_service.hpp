@@ -14,6 +14,7 @@ struct ToplevelInfo {
     bool minimized = false;
     bool fullscreen = false;
     std::vector<wl_output*> outputs;
+    zwlr_foreign_toplevel_handle_v1* parent = nullptr;
 
     bool is_on_output(wl_output* output) const {
         return std::find(outputs.begin(), outputs.end(), output) != outputs.end();

@@ -78,7 +78,7 @@ void Panel::resize(int w, int h) {
             }
             if (toplevelService_) {
                 auto wl = std::make_unique<WindowList>(theme_, fontH >= 0 ? fontH : 0,
-                                                       renderer_->ctx(), output_, *toplevelService_);
+                                                       renderer_->ctx(), output_, *toplevelService_, HEIGHT);
                 wl->setCallback([this] { requestRedraw(); });
                 root_->addChild(std::move(wl));
             }

@@ -11,7 +11,7 @@ class IconLoader;
 class WindowList : public Widget {
 public:
     WindowList(const Theme& theme, int fontHandle, NVGcontext* ctx,
-               wl_output* output, ToplevelService& service);
+               wl_output* output, ToplevelService& service, int panelHeight);
     ~WindowList() override;
 
     void setCallback(std::function<void()> cb);
@@ -32,6 +32,7 @@ private:
     int                           fontHandle_;
     wl_output*                    output_;
     ToplevelService&              service_;
+    int                           panelHeight_;
     std::unique_ptr<IconLoader>   iconLoader_;
     std::function<void()>         callback_;
     int                           subId_ = -1;
