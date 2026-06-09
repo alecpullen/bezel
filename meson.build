@@ -1,4 +1,4 @@
-project('myshell', 'c', 'cpp',
+project('bezel', 'c', 'cpp',
         version : '0.1.0',
         default_options : ['cpp_std=c++20', 'warning_level=2'])
 
@@ -42,7 +42,7 @@ foreach p : protocols
                        command : [scanner, 'private-code', '@INPUT@', '@OUTPUT@'])
 endforeach
 
-executable('myshell',
+executable('bezel',
            ['src/main.cpp', 'src/egl.cpp', 'src/panel.cpp',
             'src/context_menu_surface.cpp',
             'src/renderer.cpp', 'src/font_cache.cpp', 'src/clock.cpp',

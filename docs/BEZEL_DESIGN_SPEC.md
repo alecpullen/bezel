@@ -1,4 +1,4 @@
-# myshell — UI/UX design spec
+# bezel — UI/UX design spec
 
 **Version:** 0.1
 **Date:** 2026-06-08

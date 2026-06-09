@@ -9,7 +9,7 @@ meson setup buildDir        # first time (or: meson setup buildDir --reconfigure
 meson compile -C buildDir   # build (runs Ninja)
 ```
 
-Artifacts land in `buildDir/`. Run the binary directly: `./buildDir/myshell`. Requires a Wayland session with `zwlr_layer_shell_v1` — the expected compositor is **MangoWC**. GNOME/KDE sessions will fail at init.
+Artifacts land in `buildDir/`. Run the binary directly: `./buildDir/bezel`. Requires a Wayland session with `zwlr_layer_shell_v1` — the expected compositor is **MangoWC**. GNOME/KDE sessions will fail at init.
 
 There is no test suite and no CI. Verify changes by building and running against the compositor.
 
@@ -56,7 +56,7 @@ When adding a new protocol: add its XML to `protocols/`, add an entry to the `pr
 
 - **Single process, one theme.** All panels share one `App`, one `Theme`, one set of services. No config-matching across binaries.
 - **Graceful degradation.** Services that fail to connect (D-Bus unavailable, compositor lacking a protocol) log and disable themselves; the panel still boots.
-- **Design spec is the reference.** The visual design (Nocturne tokens, panel height 48px, layout regions) is in `docs/MYSHELL_DESIGN_SPEC.md`. The milestone plan is in `docs/milestone-tracker.md`.
+- **Design spec is the reference.** The visual design (Nocturne tokens, panel height 48px, layout regions) is in `docs/BEZEL_DESIGN_SPEC.md`. The milestone plan is in `docs/milestone-tracker.md`.
 - **No manual protocol generation.** `wayland-scanner` runs automatically via Meson custom targets. Never manually generate or commit the generated `.h`/`.c` files.
 
 ## Current milestone status (as of M4)

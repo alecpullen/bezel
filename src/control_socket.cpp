@@ -18,7 +18,7 @@ ControlSocket::~ControlSocket() {
 
 bool ControlSocket::init() {
     const char* xdg = std::getenv("XDG_RUNTIME_DIR");
-    path_ = xdg ? std::string(xdg) + "/myshell.sock" : "/tmp/myshell.sock";
+    path_ = xdg ? std::string(xdg) + "/bezel.sock" : "/tmp/bezel.sock";
 
     unlink(path_.c_str()); // clean up stale socket from previous crash
 

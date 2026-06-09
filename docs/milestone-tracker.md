@@ -1,8 +1,8 @@
-# myshell — Milestone Tracker
+# bezel — Milestone Tracker
 
 **Version:** 0.1
 **Date:** 2026-06-08
-**Design reference:** [`MYSHELL_DESIGN_SPEC.md`](MYSHELL_DESIGN_SPEC.md)
+**Design reference:** [`BEZEL_DESIGN_SPEC.md`](BEZEL_DESIGN_SPEC.md)
 **Build:** `meson setup buildDir && meson compile -C buildDir`
 
 ---
@@ -353,7 +353,7 @@ M1 (Foundation) ──── DONE
 #### 5.2 Control socket
 
 - [ ] Create `ControlSocket` class in `App`:
-  - Binds a Unix domain socket at `$XDG_RUNTIME_DIR/myshell.sock` (or `/tmp/myshell.sock` fallback)
+  - Binds a Unix domain socket at `$XDG_RUNTIME_DIR/bezel.sock` (or `/tmp/bezel.sock` fallback)
   - Listens for clients (a hotkey daemon like `sxhkd` or `swaymsg`)
   - Supports commands:
     - `toggle_launcher` — open/close the command mode surface on the active output
@@ -370,7 +370,7 @@ M1 (Foundation) ──── DONE
   - Three scopes merged into one ranked list:
     1. **Applications** (from `DesktopIndex`)
     2. **Open windows** (from `ToplevelService`; exclude the currently-focused window per §3.2)
-    3. **Commands/actions** (log-out, suspend, lock, quit myshell — hardcoded initially, extensible later)
+    3. **Commands/actions** (log-out, suspend, lock, quit bezel — hardcoded initially, extensible later)
   - Ranking: apps first, windows second, commands third (§3.2)
   - Each result: `{icon, name, type_subtitle, activation_target}`
 
@@ -402,7 +402,7 @@ M1 (Foundation) ──── DONE
 
 ### Deliverables
 
-- `echo "toggle_launcher" | nc -U $XDG_RUNTIME_DIR/myshell.sock` opens the command mode surface
+- `echo "toggle_launcher" | nc -U $XDG_RUNTIME_DIR/bezel.sock` opens the command mode surface
 - The surface appears on the active output, requests keyboard focus, and renders a search field
 - Typing fuzzy-matches across .desktop apps, open windows, and system commands
 - First result is pre-selected; Enter launches it; Esc dismisses
@@ -413,7 +413,7 @@ M1 (Foundation) ──── DONE
 
 ## M6 — Notifications 📋 PLANNED
 
-**Goal:** Implement the `org.freedesktop.Notifications` D-Bus interface as a service provider (not consumer). Render stacked toasts with timeouts and basic actions. This is the first time myshell acts as a server on D-Bus.
+**Goal:** Implement the `org.freedesktop.Notifications` D-Bus interface as a service provider (not consumer). Render stacked toasts with timeouts and basic actions. This is the first time bezel acts as a server on D-Bus.
 
 **Dependencies:** M3 (Services + observer pattern, D-Bus event loop)
 
@@ -433,7 +433,7 @@ M1 (Foundation) ──── DONE
     - `GetCapabilities() → as` — return `["body", "actions", "icon-static"]` (no markup, no persistence yet)
     - `Notify(app_name, replaces_id, app_icon, summary, body, actions, hints, expire_timeout) → u` — returns notification ID
     - `CloseNotification(id)`
-    - `GetServerInformation() → (name, vendor, version, spec_version)` — return `("myshell", "myshell", "0.1", "1.2")`
+    - `GetServerInformation() → (name, vendor, version, spec_version)` — return `("bezel", "bezel", "0.1", "1.2")`
   - Emit `NotificationClosed(id, reason)` and `ActionInvoked(id, action_key)` signals appropriately
 
 #### 6.2 Toast rendering
@@ -629,7 +629,7 @@ Per design spec §3.4:
 
 ## M9 — Session: idle + lock + power 📋 PLANNED
 
-**Goal:** Idle detection, a secure session lock with PAM, and a power menu backed by logind. This makes myshell a full session shell — not just a panel.
+**Goal:** Idle detection, a secure session lock with PAM, and a power menu backed by logind. This makes bezel a full session shell — not just a panel.
 
 **Dependencies:** M3 (D-Bus event loop), M2 (widget/render), Wayland protocol infrastructure from M4
 
@@ -663,8 +663,8 @@ Per design spec §3.4:
   - Keyboard interactivity: grabs keyboard exclusively
 - [ ] PAM integration (`libpam`):
   - `#include <security/pam_appl.h>`
-  - In-process PAM: initialize a `pam_handle_t` with service name `"myshell"` (requires a PAM config at `/etc/pam.d/myshell` — document this setup)
-  - Conversation function: myshell provides the password string via a static callback (`pam_conv`) — the lock surface's input field feeds characters to the PAM conversation
+  - In-process PAM: initialize a `pam_handle_t` with service name `"bezel"` (requires a PAM config at `/etc/pam.d/bezel` — document this setup)
+  - Conversation function: bezel provides the password string via a static callback (`pam_conv`) — the lock surface's input field feeds characters to the PAM conversation
   - On `pam_authenticate()` success → call `ext_session_lock_surface_v1_unlock_and_destroy()` → compositor restores normal rendering
   - On failure → clear password field, show error message, rate-limit attempts (1s delay between tries)
 - [ ] Error handling:
@@ -696,10 +696,10 @@ Per design spec §3.4:
 
 - After 5 minutes of inactivity, the screen locks (PAM password prompt)
 - Correct password unlocks and restores the session; incorrect password shows error
-- `echo "lock" | nc -U $XDG_RUNTIME_DIR/myshell.sock` triggers lock
+- `echo "lock" | nc -U $XDG_RUNTIME_DIR/bezel.sock` triggers lock
 - Power menu pops up with Suspend/Power Off/Reboot/Lock options
 - All power actions work via logind
-- A second TTY can `killall myshell` if the lock process fails (safety valve)
+- A second TTY can `killall bezel` if the lock process fails (safety valve)
 
 ---
 
@@ -721,7 +721,7 @@ Per design spec §3.4:
 
 - [ ] Add `tomlplusplus` dependency (header-only) to `meson.build`
 - [ ] Create `Config` class:
-  - Loads from `$XDG_CONFIG_HOME/myshell/config.toml` (fallback `~/.config/myshell/config.toml`)
+  - Loads from `$XDG_CONFIG_HOME/bezel/config.toml` (fallback `~/.config/bezel/config.toml`)
   - Falls back to compiled-in defaults (Nocturne theme tokens from §2)
   - Exposes structured config: `theme`, `layout`, `modules`, `session`
   - Schema (draft):
@@ -799,7 +799,7 @@ Per design spec §3.4:
 
 ### Deliverables
 
-- Single TOML config file at `~/.config/myshell/config.toml` controls theme, layout, which modules are enabled
+- Single TOML config file at `~/.config/bezel/config.toml` controls theme, layout, which modules are enabled
 - Every visual element reads from theme tokens; user can override any token
 - Subtle animations on panel transitions, hover, and notification lifecycle (no jarring instant-swaps)
 - No double-rendering on multi-monitor; singleton tray migrates cleanly on focus change
@@ -812,7 +812,7 @@ Per design spec §3.4:
 
 ### Build system
 
-Each milestone that adds a protocol updates `meson.build` protocols list. Each that adds a dependency (sdbus-c++, nanovg, freetype, harfbuzz, pipewire, tomlplusplus, libpam) adds a `dependency()` call and links it to the `myshell` executable target.
+Each milestone that adds a protocol updates `meson.build` protocols list. Each that adds a dependency (sdbus-c++, nanovg, freetype, harfbuzz, pipewire, tomlplusplus, libpam) adds a `dependency()` call and links it to the `bezel` executable target.
 
 ### Include-order hack
 
@@ -820,7 +820,7 @@ The `src/protocol.hpp` namespace macro hack must be examined for each new protoc
 
 ### Error handling pattern
 
-Services that fail to connect (D-Bus unavailable, PipeWire socket missing) should **degrade gracefully** — log the error, mark the service as unavailable, and let the widget tree rebuild without that widget. No crash, no blocking init. This ensures myshell always boots to a functional panel even if optional services are missing.
+Services that fail to connect (D-Bus unavailable, PipeWire socket missing) should **degrade gracefully** — log the error, mark the service as unavailable, and let the widget tree rebuild without that widget. No crash, no blocking init. This ensures bezel always boots to a functional panel even if optional services are missing.
 
 ### Threading
 
@@ -836,7 +836,7 @@ All milestones assume single-threaded event loop. No `std::thread`, no async. If
 | Q2 | Does MangoWC expose `wl_event_loop` for fd integration? | M3 | Default to manual `poll()` loop watching Wayland fd + D-Bus fd. More portable. |
 | Q3 | Does MangoWC support `xdg-systemtray-v1`? If yes, use it as primary; if not, SNI is primary and xdg-systemtray-v1 remains an experiment. | M8 |
 | Q4 | ext-session-lock-v1 negotiation — does MangoWC implement it? | M9 | Required protocol; verify compositor support early in M9. If missing, lock is non-functional until compositor adds it. |
-| Q5 | PAM configuration (`/etc/pam.d/myshell`) — what service template? | M9 | Ship an example PAM config; user or package manager installs it. Document in AGENTS.md. |
+| Q5 | PAM configuration (`/etc/pam.d/bezel`) — what service template? | M9 | Ship an example PAM config; user or package manager installs it. Document in AGENTS.md. |
 | Q6 | Icon themes for .desktop icons — which icon loader? | M5 | Start with GTK icon theme lookup (`IconThemePath` + `IconName` from .desktop files); use `gtk-icon-theme` headers or parse `index.theme` + `hicolor` manually. |
 | Q7 | HiDPI fractional scaling — how to handle non-integer scales? | M2, M10 | EGL surface is sized at integer pixels; `wl_output::scale` tells us the factor. Apply `nvgGlobalScale()` and size widgets in logical pixels. NanoVG handles sub-pixel text. |
 
