@@ -16,6 +16,7 @@
 #include "renderer.hpp"
 #include "font_cache.hpp"
 #include "battery_service.hpp"
+#include "control_socket.hpp"
 #include "desktop_index.hpp"
 #include "toplevel_service.hpp"
 #include "workspace_service.hpp"
@@ -83,7 +84,9 @@ class App {
         std::unique_ptr<ToplevelService>  toplevelService_;
         std::unique_ptr<WorkspaceService> workspaceService_;
         std::unique_ptr<DesktopIndex>     desktopIndex_;
+        std::unique_ptr<ControlSocket>    controlSocket_;
 
+        void handleSocketCommand(std::string_view cmd);
         void tick();
 };
 
@@ -229,6 +232,10 @@ bool App::init() {
     desktopIndex_ = std::make_unique<DesktopIndex>();
     desktopIndex_->scan();
 
+    controlSocket_ = std::make_unique<ControlSocket>();
+    if (!controlSocket_->init())
+        controlSocket_.reset();
+
     try {
         dbusConn_ = sdbus::createSystemBusConnection();
         batteryService_ = std::make_unique<BatteryService>(*dbusConn_);
@@ -260,62 +267,55 @@ void App::run() {
         }
         if (!running_) break;
         wl_display_flush(display_);
-        
+
         int wlFd = wl_display_get_fd(display_);
-        
+
+        struct pollfd fds[4];
+        int nfds = 0;
+        int wlIdx = nfds++;
+        fds[wlIdx] = { wlFd, POLLIN, 0 };
+
+        int dbusIdx = -1, dbusEventIdx = -1;
+        int timeout = 1000;
+        sdbus::IConnection::PollData dbusPoll{};
         if (dbusConn_) {
-            auto dbusPoll = dbusConn_->getEventLoopPollData();
-            int dbusTimeout = dbusPoll.getPollTimeout();
-            int timeout = 1000; // 1s timeout for Clock minute-tick
-            if (dbusTimeout >= 0 && dbusTimeout < timeout) {
-                timeout = dbusTimeout;
-            }
-            
-            struct pollfd fds[3] = {
-                { wlFd, POLLIN, 0 },
-                { dbusPoll.fd, dbusPoll.events, 0 },
-                { dbusPoll.eventFd, POLLIN, 0 }
-            };
-            
-            int ret = poll(fds, 3, timeout);
-            
-            if (ret > 0) {
-                if (fds[0].revents & POLLIN) {
-                    if (wl_display_read_events(display_) < 0) {
-                        break;
-                    }
-                } else {
-                    wl_display_cancel_read(display_);
-                }
-            } else {
-                wl_display_cancel_read(display_);
-            }
-            
-            dbusConn_->processPendingEvent();
-        } else {
-            struct pollfd fds[1] = {{wlFd, POLLIN, 0}};
-            int ret = poll(fds, 1, 1000);
-            
-            if (ret > 0) {
-                if (fds[0].revents & POLLIN) {
-                    if (wl_display_read_events(display_) < 0) {
-                        break;
-                    }
-                } else {
-                    wl_display_cancel_read(display_);
-                }
-            } else {
-                wl_display_cancel_read(display_);
-            }
+            dbusPoll   = dbusConn_->getEventLoopPollData();
+            int dbusTo = dbusPoll.getPollTimeout();
+            if (dbusTo >= 0 && dbusTo < timeout) timeout = dbusTo;
+            dbusIdx      = nfds++;
+            fds[dbusIdx] = { dbusPoll.fd, dbusPoll.events, 0 };
+            dbusEventIdx      = nfds++;
+            fds[dbusEventIdx] = { dbusPoll.eventFd, POLLIN, 0 };
         }
+
+        int sockIdx = -1;
+        if (controlSocket_) {
+            sockIdx      = nfds++;
+            fds[sockIdx] = { controlSocket_->fd(), POLLIN, 0 };
+        }
+
+        int ret = poll(fds, nfds, timeout);
+
+        if (ret > 0) {
+            if (fds[wlIdx].revents & POLLIN) {
+                if (wl_display_read_events(display_) < 0) break;
+            } else {
+                wl_display_cancel_read(display_);
+            }
+        } else {
+            wl_display_cancel_read(display_);
+        }
+
+        if (dbusConn_)
+            dbusConn_->processPendingEvent();
+
+        if (sockIdx >= 0 && (fds[sockIdx].revents & POLLIN))
+            controlSocket_->dispatch([this](std::string_view cmd){ handleSocketCommand(cmd); });
         
         if (wl_display_dispatch_pending(display_) < 0) {
             break;
         }
-        
-        if (dbusConn_) {
-            dbusConn_->processPendingEvent();
-        }
+
         if (batteryService_) {
             batteryService_->tick();
         }
@@ -327,6 +327,15 @@ void App::run() {
         }
         
         tick();
+    }
+}
+
+void App::handleSocketCommand(std::string_view cmd) {
+    if (cmd == "toggle_launcher") {
+        fprintf(stderr, "control socket: toggle_launcher (not yet implemented)\n");
+    } else {
+        fprintf(stderr, "control socket: unknown command '%.*s'\n",
+                (int)cmd.size(), cmd.data());
     }
 }
 
