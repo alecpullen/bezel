@@ -89,7 +89,7 @@ struct Theme {
             .radiusWindow      = 10.0f,
             .tileSizeHorizontal= 34.0f,
             .tileSizeVertical  = 40.0f,
-            .workspaceMapW     = 36.0f,
+            .workspaceMapW     = 40.0f,
             .workspaceMapH     = 26.0f,
             .panelPad          = 12.0f,
             .gapItem           = 8.0f,

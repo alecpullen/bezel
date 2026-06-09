@@ -97,3 +97,29 @@ void BoxLayout::render(const Renderer& renderer) const {
     for (const auto& c : children_)
         c.widget->render(renderer);
 }
+
+bool BoxLayout::handleClick(int x, int y, uint32_t button) {
+    for (const auto& c : children_) {
+        Widget* w = c.widget.get();
+        if (x >= w->x() && x < w->x() + w->width() &&
+            y >= w->y() && y < w->y() + w->height())
+            if (w->handleClick(x, y, button)) return true;
+    }
+    return false;
+}
+
+void BoxLayout::handleHover(int x, int y) {
+    for (const auto& c : children_) {
+        Widget* w = c.widget.get();
+        if (x >= w->x() && x < w->x() + w->width() &&
+            y >= w->y() && y < w->y() + w->height())
+            w->handleHover(x, y);
+        else
+            w->clearHover();
+    }
+}
+
+void BoxLayout::clearHover() {
+    for (const auto& c : children_)
+        c.widget->clearHover();
+}

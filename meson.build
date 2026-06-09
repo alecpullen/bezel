@@ -44,6 +44,7 @@ endforeach
 
 executable('myshell',
            ['src/main.cpp', 'src/egl.cpp', 'src/panel.cpp',
+            'src/context_menu_surface.cpp',
             'src/renderer.cpp', 'src/font_cache.cpp', 'src/clock.cpp',
             'src/layout.cpp', 'src/label.cpp', 'src/battery_service.cpp',
             'src/toplevel_service.cpp', 'src/workspace_service.cpp',

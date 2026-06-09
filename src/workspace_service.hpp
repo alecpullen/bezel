@@ -40,6 +40,7 @@ public:
     void remove_output(wl_output* output);
 
     const OutputWorkspaceState* get_output_state(wl_output* output) const;
+    zdwl_ipc_output_v2* dwl_output(wl_output* output) const;
 
 private:
     struct OutputData {

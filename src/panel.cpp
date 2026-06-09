@@ -1,5 +1,6 @@
 // panel.cpp
 #include "panel.hpp"
+#include "context_menu_surface.hpp"
 #include "egl.hpp"
 #include "clock.hpp"
 #include "battery_service.hpp"
@@ -7,12 +8,14 @@
 #include "toplevel_service.hpp"
 #include "window_list.hpp"
 #include "workspace_switcher.hpp"
+#include <linux/input-event-codes.h>
 #include <wayland-client-protocol.h>
 #include <wayland-egl-core.h>
+#include <algorithm>
 #include <cstdio>
 
-Panel::Panel(Theme& theme, Egl& egl, wl_compositor* compositor, zwlr_layer_shell_v1* shell, wl_output* output, const char* name, BatteryService* batteryService, ToplevelService* toplevelService, WorkspaceService* workspaceService)
-    : egl_(egl), theme_(theme), output_(output), batteryService_(batteryService), toplevelService_(toplevelService), workspaceService_(workspaceService) {
+Panel::Panel(Theme& theme, Egl& egl, wl_compositor* compositor, zwlr_layer_shell_v1* shell, wl_output* output, const char* name, BatteryService* batteryService, ToplevelService* toplevelService, WorkspaceService* workspaceService, wl_seat* seat)
+    : egl_(egl), theme_(theme), compositor_(compositor), layer_shell_(shell), output_(output), seat_(seat), batteryService_(batteryService), toplevelService_(toplevelService), workspaceService_(workspaceService) {
     surface_ = wl_compositor_create_surface(compositor);
     layer_surface_ = zwlr_layer_shell_v1_get_layer_surface(shell, surface_, output, ZWLR_LAYER_SHELL_V1_LAYER_TOP, name);
 
@@ -72,7 +75,7 @@ void Panel::resize(int w, int h) {
             root_ = std::make_unique<BoxLayout>(BoxOrientation::Horizontal,
                                                 theme_.gapItem, theme_.panelPad);
             if (workspaceService_) {
-                auto switcher = std::make_unique<WorkspaceSwitcher>(theme_, fontH >= 0 ? fontH : 0, output_, *workspaceService_);
+                auto switcher = std::make_unique<WorkspaceSwitcher>(theme_, fontH >= 0 ? fontH : 0, output_, *workspaceService_, HEIGHT);
                 switcher->setCallback([this] { requestRedraw(); });
                 root_->addChild(std::move(switcher));
             }
@@ -80,6 +83,25 @@ void Panel::resize(int w, int h) {
                 auto wl = std::make_unique<WindowList>(theme_, fontH >= 0 ? fontH : 0,
                                                        renderer_->ctx(), output_, *toplevelService_, HEIGHT);
                 wl->setCallback([this] { requestRedraw(); });
+                wl->setSeat(seat_);
+                wl->setContextMenuCallback([this](WindowList::ContextMenuRequest req) {
+                    contextMenuSurface_.reset();
+                    int ax = std::min(req.anchorX, width_ - ContextMenuSurface::MENU_W);
+                    bool pinned = pinnedAppIds_.count(req.app_id) > 0;
+                    contextMenuSurface_ = std::make_unique<ContextMenuSurface>(
+                        egl_, theme_, compositor_, layer_shell_, output_,
+                        ax, pinned, req.handle, req.app_id,
+                        [this, req] {
+                            if (req.handle)
+                                zwlr_foreign_toplevel_handle_v1_close(req.handle);
+                            contextMenuSurface_.reset();
+                        },
+                        [this, req] {
+                            togglePin(req.app_id);
+                            contextMenuSurface_.reset();
+                        });
+                });
+                windowList_ = wl.get();
                 root_->addChild(std::move(wl));
             }
             root_->addSpacer();
@@ -128,6 +150,53 @@ void Panel::render() {
     renderer_->endFrame();
     eglSwapBuffers(egl_.display(), egl_surface_);
 }
+
+void Panel::setSeat(wl_seat* seat) {
+    seat_ = seat;
+    if (windowList_) windowList_->setSeat(seat_);
+}
+
+void Panel::handlePointerButton(int x, int y, uint32_t button) {
+    if (button != BTN_LEFT && button != BTN_RIGHT) return;
+    contextMenuSurface_.reset();
+    if (root_) root_->handleClick(x, y, button);
+    requestRedraw();
+}
+
+void Panel::handlePointerMotion(int x, int y) {
+    if (root_) root_->handleHover(x, y);
+    requestRedraw();
+}
+
+void Panel::handlePointerLeave() {
+    if (root_) root_->clearHover();
+    requestRedraw();
+}
+
+void Panel::handlePopupPointerMotion(int x, int y) {
+    if (contextMenuSurface_) contextMenuSurface_->handlePointerMotion(x, y);
+}
+
+void Panel::handlePopupPointerButton(int x, int y, uint32_t button) {
+    if (contextMenuSurface_) {
+        contextMenuSurface_->handlePointerButton(x, y, button);
+        contextMenuSurface_.reset();
+        requestRedraw();
+    }
+}
+
+wl_surface* Panel::popupSurface() const {
+    return contextMenuSurface_ ? contextMenuSurface_->surface() : nullptr;
+}
+
+void Panel::togglePin(const std::string& app_id) {
+    if (pinnedAppIds_.count(app_id))
+        pinnedAppIds_.erase(app_id);
+    else
+        pinnedAppIds_.insert(app_id);
+    if (windowList_) windowList_->setPinnedAppIds(pinnedAppIds_);
+}
+
 
 void Panel::handle_configure(void* data, zwlr_layer_surface_v1* s, uint32_t serial, uint32_t w, uint32_t h) {
     auto* self = static_cast<Panel*>(data);

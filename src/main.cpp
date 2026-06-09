@@ -6,6 +6,7 @@
 #include <sys/types.h>
 #include <vector>
 #include <poll.h>
+#include <linux/input-event-codes.h>
 #include <wayland-client-protocol.h>
 #include <sdbus-c++/sdbus-c++.h>
 #include "egl.hpp"
@@ -43,24 +44,39 @@ class App {
         static void out_done(void*, wl_output*) {}
         static void out_scale(void* data, wl_output*, int32_t factor) {
             static_cast<Output*>(data)->scale = factor;
-        } 
+        }
         static void out_name(void* data, wl_output*, const char* name) {
             auto* o = static_cast<Output*>(data);
             snprintf(o->name, sizeof(o->name), "%s", name);
         }
         static void out_description(void*, wl_output*, const char*) {}
+
+        static void seat_caps(void* data, wl_seat* seat, uint32_t caps);
+        static void ptr_enter(void* data, wl_pointer*, uint32_t serial,
+                              wl_surface* surface, wl_fixed_t sx, wl_fixed_t sy);
+        static void ptr_leave(void* data, wl_pointer*, uint32_t serial, wl_surface*);
+        static void ptr_motion(void* data, wl_pointer*, uint32_t time,
+                               wl_fixed_t sx, wl_fixed_t sy);
+        static void ptr_button(void* data, wl_pointer*, uint32_t serial, uint32_t time,
+                               uint32_t button, uint32_t state);
         
-        wl_display*          display_     = nullptr;
-        wl_registry*         registry_    = nullptr;
-        wl_compositor*       compositor_  = nullptr;
-        zwlr_layer_shell_v1* layer_shell_ = nullptr;
+        wl_display*          display_      = nullptr;
+        wl_registry*         registry_     = nullptr;
+        wl_compositor*       compositor_   = nullptr;
+        zwlr_layer_shell_v1* layer_shell_  = nullptr;
         zwlr_foreign_toplevel_manager_v1* toplevel_manager_ = nullptr;
         zdwl_ipc_manager_v2* dwl_ipc_manager_ = nullptr;
+        wl_seat*             seat_             = nullptr;
+        wl_pointer*          pointer_          = nullptr;
+        Panel*               hoveredPanel_     = nullptr;
+        Panel*               hoveredMenuOwner_ = nullptr;
+        int                  ptrX_             = 0;
+        int                  ptrY_             = 0;
         Egl                  egl_;
         Theme                theme_ = Theme::defaultTheme();
         std::vector<std::unique_ptr<Output>> outputs_;
-        bool                 ready_       = false;
-        bool                 running_     = true;
+        bool                 ready_        = false;
+        bool                 running_      = true;
         std::unique_ptr<sdbus::IConnection> dbusConn_;
         std::unique_ptr<BatteryService> batteryService_;
         std::unique_ptr<ToplevelService> toplevelService_;
@@ -71,7 +87,7 @@ class App {
 
 void App::create_panel(Output& o) {
     if (!compositor_ || !layer_shell_) return;
-    o.panel = std::make_unique<Panel>(theme_, egl_, compositor_, layer_shell_, o.wl, o.name[0] ? o.name : "panel", batteryService_.get(), toplevelService_.get(), workspaceService_.get());
+    o.panel = std::make_unique<Panel>(theme_, egl_, compositor_, layer_shell_, o.wl, o.name[0] ? o.name : "panel", batteryService_.get(), toplevelService_.get(), workspaceService_.get(), seat_);
     o.panel->setScale(o.scale);
 }
 
@@ -91,6 +107,13 @@ void App::reg_global(void* data, wl_registry* r, uint32_t name, const char* ifac
         self->workspaceService_->init();
         for (auto& o : self->outputs_)
             self->workspaceService_->add_output(o->wl);
+    } else if (strcmp(iface, wl_seat_interface.name) == 0) {
+        self->seat_ = (wl_seat*)wl_registry_bind(r, name, &wl_seat_interface, 1);
+        static const wl_seat_listener seat_listener {
+            .capabilities = seat_caps,
+            .name         = [](void*, wl_seat*, const char*) {},
+        };
+        wl_seat_add_listener(self->seat_, &seat_listener, self);
     } else if (strcmp(iface, wl_output_interface.name) == 0) {
         uint32_t v = version < 4 ? version : 4;
         auto o = std::make_unique<Output>();
@@ -107,6 +130,73 @@ void App::reg_global(void* data, wl_registry* r, uint32_t name, const char* ifac
         self->outputs_.push_back(std::move(o));
         if (self->ready_) self->create_panel(*self->outputs_.back());
     }
+}
+
+void App::seat_caps(void* data, wl_seat* seat, uint32_t caps) {
+    auto* self = static_cast<App*>(data);
+    if ((caps & WL_SEAT_CAPABILITY_POINTER) && !self->pointer_) {
+        self->pointer_ = wl_seat_get_pointer(seat);
+        static const wl_pointer_listener pointer_listener = [] {
+            wl_pointer_listener l{};
+            l.enter  = ptr_enter;
+            l.leave  = ptr_leave;
+            l.motion = ptr_motion;
+            l.button = ptr_button;
+            return l;
+        }();
+        wl_pointer_add_listener(self->pointer_, &pointer_listener, self);
+        for (auto& o : self->outputs_)
+            if (o->panel) o->panel->setSeat(self->seat_);
+    } else if (!(caps & WL_SEAT_CAPABILITY_POINTER) && self->pointer_) {
+        wl_pointer_release(self->pointer_);
+        self->pointer_ = nullptr;
+    }
+}
+
+void App::ptr_enter(void* data, wl_pointer*, uint32_t, wl_surface* surface,
+                    wl_fixed_t sx, wl_fixed_t sy) {
+    auto* self = static_cast<App*>(data);
+    self->hoveredPanel_     = nullptr;
+    self->hoveredMenuOwner_ = nullptr;
+    for (auto& o : self->outputs_) {
+        if (!o->panel) continue;
+        if (o->panel->surface() == surface) {
+            self->hoveredPanel_ = o->panel.get();
+            break;
+        }
+        if (o->panel->popupSurface() == surface) {
+            self->hoveredMenuOwner_ = o->panel.get();
+            break;
+        }
+    }
+    self->ptrX_ = wl_fixed_to_int(sx);
+    self->ptrY_ = wl_fixed_to_int(sy);
+}
+
+void App::ptr_leave(void* data, wl_pointer*, uint32_t, wl_surface*) {
+    auto* self = static_cast<App*>(data);
+    if (self->hoveredPanel_) self->hoveredPanel_->handlePointerLeave();
+    self->hoveredPanel_     = nullptr;
+    self->hoveredMenuOwner_ = nullptr;
+}
+
+void App::ptr_motion(void* data, wl_pointer*, uint32_t, wl_fixed_t sx, wl_fixed_t sy) {
+    auto* self = static_cast<App*>(data);
+    self->ptrX_ = wl_fixed_to_int(sx);
+    self->ptrY_ = wl_fixed_to_int(sy);
+    if (self->hoveredMenuOwner_)
+        self->hoveredMenuOwner_->handlePopupPointerMotion(self->ptrX_, self->ptrY_);
+    else if (self->hoveredPanel_)
+        self->hoveredPanel_->handlePointerMotion(self->ptrX_, self->ptrY_);
+}
+
+void App::ptr_button(void* data, wl_pointer*, uint32_t, uint32_t, uint32_t button, uint32_t state) {
+    auto* self = static_cast<App*>(data);
+    if (state != WL_POINTER_BUTTON_STATE_PRESSED) return;
+    if (self->hoveredMenuOwner_)
+        self->hoveredMenuOwner_->handlePopupPointerButton(self->ptrX_, self->ptrY_, button);
+    else if (self->hoveredPanel_)
+        self->hoveredPanel_->handlePointerButton(self->ptrX_, self->ptrY_, button);
 }
 
 void App::reg_global_remove(void* data, wl_registry*, uint32_t name) {
@@ -249,6 +339,8 @@ void App::finish() {
     outputs_.clear();
     toplevelService_.reset();
     workspaceService_.reset();
+    if (pointer_) { wl_pointer_release(pointer_); pointer_ = nullptr; }
+    if (seat_)    { wl_seat_destroy(seat_); seat_ = nullptr; }
     if (layer_shell_) zwlr_layer_shell_v1_destroy(layer_shell_);
     if (compositor_) wl_compositor_destroy(compositor_);
     egl_.finish();

@@ -14,6 +14,9 @@ public:
     virtual void layout(int x, int y, int w, int h) = 0;
     virtual void render(const Renderer& renderer) const = 0;
     virtual bool hit_test(int, int) const { return false; }
+    virtual bool handleClick(int x, int y, uint32_t button) { (void)x; (void)y; (void)button; return false; }
+    virtual void handleHover(int x, int y) { (void)x; (void)y; }
+    virtual void clearHover() {}
 
     int width() const { return w_; }
     int height() const { return h_; }

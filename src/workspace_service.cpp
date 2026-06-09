@@ -81,6 +81,11 @@ const OutputWorkspaceState* WorkspaceService::get_output_state(wl_output* output
     return nullptr;
 }
 
+zdwl_ipc_output_v2* WorkspaceService::dwl_output(wl_output* output) const {
+    auto it = outputs_.find(output);
+    return it != outputs_.end() ? it->second->dwl_output : nullptr;
+}
+
 void WorkspaceService::on_tags(void* data, zdwl_ipc_manager_v2*, uint32_t amount) {
     auto* self = static_cast<WorkspaceService*>(data);
     self->tag_count_ = amount;

@@ -25,6 +25,9 @@ public:
     int preferredHeight() const override;
     void layout(int x, int y, int w, int h) override;
     void render(const Renderer& renderer) const override;
+    bool handleClick(int x, int y, uint32_t button) override;
+    void handleHover(int x, int y) override;
+    void clearHover() override;
 
 private:
     struct Child {

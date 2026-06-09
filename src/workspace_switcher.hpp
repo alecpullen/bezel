@@ -11,7 +11,7 @@ public:
         int x, y, w, h;
     };
 
-    WorkspaceSwitcher(const Theme& theme, int fontHandle, wl_output* output, WorkspaceService& service);
+    WorkspaceSwitcher(const Theme& theme, int fontHandle, wl_output* output, WorkspaceService& service, int panelHeight);
     ~WorkspaceSwitcher() override;
 
     void setCallback(std::function<void()> cb);
@@ -21,6 +21,9 @@ public:
     int preferredHeight() const override;
     void layout(int x, int y, int w, int h) override;
     void render(const Renderer& renderer) const override;
+    bool handleClick(int x, int y, uint32_t button) override;
+    void handleHover(int x, int y) override;
+    void clearHover() override;
 
     static constexpr int VISIBLE_COUNT = 4;
 
@@ -34,5 +37,7 @@ private:
     std::function<void()> callback_;
     int subId_       = -1;
     int viewOffset_  = 0;
+    int panelHeight_ = 48;
     mutable std::vector<WorkspaceBounds> hitRegions_;
+    int hoverX_ = -1;
 };
