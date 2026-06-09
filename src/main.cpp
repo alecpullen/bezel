@@ -89,6 +89,8 @@ class App {
         std::unique_ptr<ControlSocket>    controlSocket_;
 
         void handleSocketCommand(std::string_view cmd);
+        void handleCommandAction(CommandAction action);
+        Panel* activeLauncherTarget();
         void tick();
 };
 
@@ -333,17 +335,60 @@ void App::run() {
     }
 }
 
+Panel* App::activeLauncherTarget() {
+    // Prefer the output that owns the currently-focused toplevel
+    if (toplevelService_) {
+        for (const auto& t : toplevelService_->toplevels()) {
+            if (t->is_closed() || !t->info().activated) continue;
+            if (t->info().outputs.empty()) continue;
+            wl_output* target_output = t->info().outputs.front();
+            for (auto& o : outputs_)
+                if (o->wl == target_output && o->panel)
+                    return o->panel.get();
+        }
+    }
+    // Fall back to the panel the pointer is over
+    if (hoveredPanel_) return hoveredPanel_;
+    // Last resort: first panel
+    for (auto& o : outputs_)
+        if (o->panel) return o->panel.get();
+    return nullptr;
+}
+
 void App::handleSocketCommand(std::string_view cmd) {
     if (cmd == "toggle_launcher") {
-        if (searchEngine_) {
-            auto results = searchEngine_->query("a");
-            fprintf(stderr, "toggle_launcher: %zu results for query 'a'\n", results.size());
-            for (size_t i = 0; i < results.size() && i < 5; ++i)
-                fprintf(stderr, "  [%d] %s (%s)\n", results[i].score, results[i].name.c_str(), results[i].subtitle.c_str());
+        // If any panel is already in launcher mode, dismiss it
+        for (auto& o : outputs_) {
+            if (o->panel && o->panel->launcherActive()) {
+                o->panel->dismissLauncher();
+                return;
+            }
         }
+        // Otherwise activate on the active output
+        Panel* target = activeLauncherTarget();
+        if (target && searchEngine_)
+            target->activateLauncher(*searchEngine_,
+                [this](CommandAction a) { handleCommandAction(a); });
     } else {
         fprintf(stderr, "control socket: unknown command '%.*s'\n",
                 (int)cmd.size(), cmd.data());
+    }
+}
+
+void App::handleCommandAction(CommandAction action) {
+    switch (action) {
+        case CommandAction::Lock:
+            system("loginctl lock-session");
+            break;
+        case CommandAction::Suspend:
+            system("systemctl suspend");
+            break;
+        case CommandAction::Logout:
+            system("loginctl terminate-session \"\"");
+            break;
+        case CommandAction::QuitBezel:
+            running_ = false;
+            break;
     }
 }
 
