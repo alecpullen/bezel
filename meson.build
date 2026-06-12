@@ -10,6 +10,7 @@ wl_protos = dependency('wayland-protocols')
 scanner   = find_program('wayland-scanner')
 
 sdbus_cpp = dependency('sdbus-c++')
+xkbcommon = dependency('xkbcommon')
 freetype  = dependency('freetype2', required : false)
 harfbuzz  = dependency('harfbuzz', required : false)
 librsvg   = dependency('librsvg-2.0', required : false)
@@ -52,7 +53,10 @@ executable('bezel',
             'src/icon_loader.cpp', 'src/battery_widget.cpp',
             'src/desktop_index.cpp', 'src/control_socket.cpp',
             'src/search_engine.cpp',
+            'src/notification_service.cpp',
+            'src/notification_overlay.cpp',
+            'src/input_backend.cpp',
             'src/nanovg_shim.cpp', gen],
            dependencies : [wl_client, wl_egl, egl, glesv2,
-                            freetype, harfbuzz, nanovg, sdbus_cpp, librsvg],
+                            xkbcommon, freetype, harfbuzz, nanovg, sdbus_cpp, librsvg],
            install : true)

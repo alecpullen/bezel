@@ -18,6 +18,9 @@
 #include "battery_service.hpp"
 #include "control_socket.hpp"
 #include "desktop_index.hpp"
+#include "input_backend.hpp"
+#include "notification_overlay.hpp"
+#include "notification_service.hpp"
 #include "search_engine.hpp"
 #include "toplevel_service.hpp"
 #include "workspace_service.hpp"
@@ -73,6 +76,7 @@ class App {
         wl_pointer*          pointer_          = nullptr;
         Panel*               hoveredPanel_     = nullptr;
         Panel*               hoveredMenuOwner_ = nullptr;
+        bool                 hoveredOverlay_   = false;
         int                  ptrX_             = 0;
         int                  ptrY_             = 0;
         Egl                  egl_;
@@ -81,15 +85,20 @@ class App {
         bool                 ready_        = false;
         bool                 running_      = true;
         std::unique_ptr<sdbus::IConnection> dbusConn_;
-        std::unique_ptr<BatteryService>   batteryService_;
-        std::unique_ptr<ToplevelService>  toplevelService_;
-        std::unique_ptr<WorkspaceService> workspaceService_;
-        std::unique_ptr<DesktopIndex>     desktopIndex_;
-        std::unique_ptr<SearchEngine>     searchEngine_;
-        std::unique_ptr<ControlSocket>    controlSocket_;
+        std::unique_ptr<sdbus::IConnection> sessionDbusConn_;
+        std::unique_ptr<BatteryService>      batteryService_;
+        std::unique_ptr<ToplevelService>     toplevelService_;
+        std::unique_ptr<WorkspaceService>    workspaceService_;
+        std::unique_ptr<NotificationService>  notificationService_;
+        std::unique_ptr<NotificationOverlay>  notificationOverlay_;
+        std::unique_ptr<DesktopIndex>         desktopIndex_;
+        std::unique_ptr<SearchEngine>        searchEngine_;
+        std::unique_ptr<InputBackend>        inputBackend_;
+        std::unique_ptr<ControlSocket>       controlSocket_;
 
         void handleSocketCommand(std::string_view cmd);
         void handleCommandAction(CommandAction action);
+        void onNotificationsChanged();
         Panel* activeLauncherTarget();
         void tick();
 };
@@ -160,6 +169,11 @@ void App::seat_caps(void* data, wl_seat* seat, uint32_t caps) {
         wl_pointer_release(self->pointer_);
         self->pointer_ = nullptr;
     }
+
+    if ((caps & WL_SEAT_CAPABILITY_KEYBOARD) && self->inputBackend_ && !self->inputBackend_->bound())
+        self->inputBackend_->bind(seat);
+    else if (!(caps & WL_SEAT_CAPABILITY_KEYBOARD) && self->inputBackend_)
+        self->inputBackend_->release();
 }
 
 void App::ptr_enter(void* data, wl_pointer*, uint32_t, wl_surface* surface,
@@ -167,6 +181,7 @@ void App::ptr_enter(void* data, wl_pointer*, uint32_t, wl_surface* surface,
     auto* self = static_cast<App*>(data);
     self->hoveredPanel_     = nullptr;
     self->hoveredMenuOwner_ = nullptr;
+    self->hoveredOverlay_   = false;
     for (auto& o : self->outputs_) {
         if (!o->panel) continue;
         if (o->panel->surface() == surface) {
@@ -178,6 +193,8 @@ void App::ptr_enter(void* data, wl_pointer*, uint32_t, wl_surface* surface,
             break;
         }
     }
+    if (self->notificationOverlay_ && self->notificationOverlay_->surface() == surface)
+        self->hoveredOverlay_ = true;
     self->ptrX_ = wl_fixed_to_int(sx);
     self->ptrY_ = wl_fixed_to_int(sy);
 }
@@ -185,15 +202,20 @@ void App::ptr_enter(void* data, wl_pointer*, uint32_t, wl_surface* surface,
 void App::ptr_leave(void* data, wl_pointer*, uint32_t, wl_surface*) {
     auto* self = static_cast<App*>(data);
     if (self->hoveredPanel_) self->hoveredPanel_->handlePointerLeave();
+    if (self->hoveredOverlay_ && self->notificationOverlay_)
+        self->notificationOverlay_->handlePointerLeave();
     self->hoveredPanel_     = nullptr;
     self->hoveredMenuOwner_ = nullptr;
+    self->hoveredOverlay_   = false;
 }
 
 void App::ptr_motion(void* data, wl_pointer*, uint32_t, wl_fixed_t sx, wl_fixed_t sy) {
     auto* self = static_cast<App*>(data);
     self->ptrX_ = wl_fixed_to_int(sx);
     self->ptrY_ = wl_fixed_to_int(sy);
-    if (self->hoveredMenuOwner_)
+    if (self->hoveredOverlay_ && self->notificationOverlay_)
+        self->notificationOverlay_->handlePointerMotion(self->ptrX_, self->ptrY_);
+    else if (self->hoveredMenuOwner_)
         self->hoveredMenuOwner_->handlePopupPointerMotion(self->ptrX_, self->ptrY_);
     else if (self->hoveredPanel_)
         self->hoveredPanel_->handlePointerMotion(self->ptrX_, self->ptrY_);
@@ -202,7 +224,9 @@ void App::ptr_motion(void* data, wl_pointer*, uint32_t, wl_fixed_t sx, wl_fixed_
 void App::ptr_button(void* data, wl_pointer*, uint32_t, uint32_t, uint32_t button, uint32_t state) {
     auto* self = static_cast<App*>(data);
     if (state != WL_POINTER_BUTTON_STATE_PRESSED) return;
-    if (self->hoveredMenuOwner_)
+    if (self->hoveredOverlay_ && self->notificationOverlay_)
+        self->notificationOverlay_->handlePointerButton(self->ptrX_, self->ptrY_, button);
+    else if (self->hoveredMenuOwner_)
         self->hoveredMenuOwner_->handlePopupPointerButton(self->ptrX_, self->ptrY_, button);
     else if (self->hoveredPanel_)
         self->hoveredPanel_->handlePointerButton(self->ptrX_, self->ptrY_, button);
@@ -223,6 +247,31 @@ bool App::init() {
     .global = reg_global, .global_remove = reg_global_remove,
     };
     wl_registry_add_listener(registry_, &reg_listener, this);
+
+    // Create InputBackend before roundtrips so seat_caps can bind it immediately
+    inputBackend_ = std::make_unique<InputBackend>(
+        [this](uint32_t keysym) {
+            for (auto& o : outputs_)
+                if (o->panel && o->panel->launcherActive()) {
+                    o->panel->handleLauncherKey(keysym);
+                    return;
+                }
+        },
+        [this](const std::string& text) {
+            for (auto& o : outputs_)
+                if (o->panel && o->panel->launcherActive()) {
+                    o->panel->handleLauncherText(text);
+                    return;
+                }
+        },
+        [this]() {
+            for (auto& o : outputs_)
+                if (o->panel && o->panel->launcherActive()) {
+                    o->panel->dismissLauncher();
+                    return;
+                }
+        }
+    );
 
     wl_display_roundtrip(display_);
     wl_display_roundtrip(display_);
@@ -251,6 +300,18 @@ bool App::init() {
         fprintf(stderr, "Warning: Failed to connect to D-Bus system bus: %s\n", e.what());
     }
 
+    try {
+        sessionDbusConn_ = sdbus::createSessionBusConnection();
+        notificationService_ = std::make_unique<NotificationService>(*sessionDbusConn_);
+        if (!notificationService_->init())
+            notificationService_.reset();
+    } catch (const sdbus::Error& e) {
+        fprintf(stderr, "Warning: NotificationService failed: %s\n", e.what());
+    }
+
+    if (notificationService_)
+        notificationService_->subscribe([this] { onNotificationsChanged(); });
+
     for (auto& o : outputs_) create_panel(*o);
     wl_display_roundtrip(display_);
     ready_ = true;
@@ -275,7 +336,7 @@ void App::run() {
 
         int wlFd = wl_display_get_fd(display_);
 
-        struct pollfd fds[4];
+        struct pollfd fds[6];
         int nfds = 0;
         int wlIdx = nfds++;
         fds[wlIdx] = { wlFd, POLLIN, 0 };
@@ -291,6 +352,18 @@ void App::run() {
             fds[dbusIdx] = { dbusPoll.fd, dbusPoll.events, 0 };
             dbusEventIdx      = nfds++;
             fds[dbusEventIdx] = { dbusPoll.eventFd, POLLIN, 0 };
+        }
+
+        int sessIdx = -1, sessEventIdx = -1;
+        sdbus::IConnection::PollData sessPoll{};
+        if (sessionDbusConn_) {
+            sessPoll = sessionDbusConn_->getEventLoopPollData();
+            int sessTo = sessPoll.getPollTimeout();
+            if (sessTo >= 0 && sessTo < timeout) timeout = sessTo;
+            sessIdx      = nfds++;
+            fds[sessIdx] = { sessPoll.fd, sessPoll.events, 0 };
+            sessEventIdx      = nfds++;
+            fds[sessEventIdx] = { sessPoll.eventFd, POLLIN, 0 };
         }
 
         int sockIdx = -1;
@@ -313,6 +386,8 @@ void App::run() {
 
         if (dbusConn_)
             dbusConn_->processPendingEvent();
+        if (sessionDbusConn_)
+            sessionDbusConn_->processPendingEvent();
 
         if (sockIdx >= 0 && (fds[sockIdx].revents & POLLIN))
             controlSocket_->dispatch([this](std::string_view cmd){ handleSocketCommand(cmd); });
@@ -329,6 +404,9 @@ void App::run() {
         }
         if (workspaceService_) {
             workspaceService_->tick();
+        }
+        if (notificationService_) {
+            notificationService_->tick();
         }
         
         tick();
@@ -375,6 +453,22 @@ void App::handleSocketCommand(std::string_view cmd) {
     }
 }
 
+void App::onNotificationsChanged() {
+    if (!notificationService_) return;
+    auto& active = notificationService_->active();
+    if (active.empty()) {
+        notificationOverlay_.reset();
+        return;
+    }
+    if (!notificationOverlay_ && !outputs_.empty() && outputs_.front()->wl) {
+        notificationOverlay_ = std::make_unique<NotificationOverlay>(
+            egl_, theme_, compositor_, layer_shell_,
+            outputs_.front()->wl, *notificationService_);
+    } else if (notificationOverlay_) {
+        notificationOverlay_->update();
+    }
+}
+
 void App::handleCommandAction(CommandAction action) {
     switch (action) {
         case CommandAction::Lock:
@@ -400,10 +494,15 @@ void App::tick() {
             o->panel->render();
         }
     }
+    if (notificationOverlay_) notificationOverlay_->render();
 }
 
 void App::finish() {
+    inputBackend_.reset();
+    notificationOverlay_.reset();
     outputs_.clear();
+    notificationService_.reset();
+    sessionDbusConn_.reset();
     toplevelService_.reset();
     workspaceService_.reset();
     if (pointer_) { wl_pointer_release(pointer_); pointer_ = nullptr; }
