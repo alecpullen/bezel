@@ -15,8 +15,8 @@
 | M2 — Render core | 🔜 NEXT | High |
 | M3 — Services + first module | 📋 PLANNED | Medium |
 | M4 — Compositor backend | 📋 PLANNED | High |
-| M5 — Launcher | 📋 PLANNED | Medium |
-| M6 — Notifications | 📋 PLANNED | Medium |
+| M5 — Launcher | ✅ DONE | Medium |
+| M6 — Notifications | ✅ DONE | Medium |
 | M7 — OSD + status polish | 📋 PLANNED | Medium |
 | M8 — System tray | 📋 PLANNED | High |
 | M9 — Session: idle + lock + power | 📋 PLANNED | High |
@@ -326,7 +326,7 @@ M1 (Foundation) ──── DONE
 
 ---
 
-## M5 — Launcher 📋 PLANNED
+## M5 — Launcher ✅ DONE
 
 **Goal:** On-demand keyboard-interactive overlay. Parses `.desktop` files. Fuzzy search across apps, open windows, and commands. Launches via `posix_spawn`. Surface is spawned and destroyed dynamically, driven by a Unix domain socket.
 
@@ -393,12 +393,12 @@ M1 (Foundation) ──── DONE
 
 #### 5.5 Input handling
 
-- [ ] Create `InputBackend` class:
+- [x] Create `InputBackend` class:
   - Binds `wl_seat` from registry
   - Listens for `wl_keyboard` enter/leave and key events
   - Routes key events only to the focused panel (command mode surface when active)
   - Maps keycodes to keysyms via `xkbcommon`
-- [ ] Handle the `Super` key gracefully: when command mode is dismissed, release keyboard grab so the compositor can process `Super` again
+- [x] Handle the `Super` key gracefully: when command mode is dismissed, release keyboard grab so the compositor can process `Super` again
 
 ### Deliverables
 
@@ -411,7 +411,7 @@ M1 (Foundation) ──── DONE
 
 ---
 
-## M6 — Notifications 📋 PLANNED
+## M6 — Notifications ✅ DONE
 
 **Goal:** Implement the `org.freedesktop.Notifications` D-Bus interface as a service provider (not consumer). Render stacked toasts with timeouts and basic actions. This is the first time bezel acts as a server on D-Bus.
 
@@ -427,7 +427,7 @@ M1 (Foundation) ──── DONE
 
 #### 6.1 D-Bus interface registration
 
-- [ ] Create `NotificationService` (extends `Service`, but runs as a D-Bus *server*):
+- [x] Create `NotificationService` (extends `Service`, but runs as a D-Bus *server*):
   - Register the name `org.freedesktop.Notifications` on the session bus
   - Implement the `org.freedesktop.Notifications` interface:
     - `GetCapabilities() → as` — return `["body", "actions", "icon-static"]` (no markup, no persistence yet)
@@ -438,33 +438,33 @@ M1 (Foundation) ──── DONE
 
 #### 6.2 Toast rendering
 
-- [ ] Create `ToastWidget`:
+- [x] Create `ToastWidget`:
   - Renders a notification card: `app_icon` (optional, left), `summary` (12px, `text.primary`), `body` (11px, `text.secondary`)
   - Background: `panel.bg` with `border.hairline` edge
   - Corner radius: `radius.tile` (8px)
   - Max width: ~360px; body truncated to 2 lines
-- [ ] Create `NotificationOverlay` (holds stacked toasts):
+- [x] Create `NotificationOverlay` (holds stacked toasts):
   - Anchored at bottom-right of the screen, positioned above the panel's exclusive zone
-  - **Not** a dedicated layer surface — rendered into a child layer surface with anchor bottom-right
+  - Dedicated layer surface (`ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY`) with anchor bottom-right
   - Stacks toasts vertically with `gap.item` spacing
-  - New toasts slide in from the right (deferred animation to M10, instant appear for M6)
+  - Instant appear for M6 (animations deferred to M10)
   - On hover: expand to show full body text (non-truncated)
-  - On click: dismiss (call `NotificationClosed(expired)`)
+  - On click: dismiss (emits `NotificationClosed`)
 
 #### 6.3 Timeout management
 
-- [ ] Each toast stores its `expire_timeout` (from the notification; default 5s if not specified)
-- [ ] Track elapsed time per toast in the main loop tick
-- [ ] On expiry: animate out (deferred to M10; instant removal for M6), emit `NotificationClosed(expired)`
-- [ ] Max concurrent toasts: cap at 3 visible. Queue extras as FIFO; a dismissed/expired slot pops the next queued toast.
+- [x] Each toast stores its `expire_timeout` (from the notification; default 5s if not specified)
+- [x] Track elapsed time per toast in the main loop tick
+- [x] On expiry: instant removal for M6 (animate deferred to M10), emit `NotificationClosed(expired)`
+- [x] Max concurrent toasts: cap at 3 visible. Queue extras as FIFO; a dismissed/expired slot pops the next queued toast.
 
 #### 6.4 Actions (basic)
 
-- [ ] Parse the `actions` array from `Notify()` (alternating action_key / action_label strings)
-- [ ] Render action buttons on the toast (e.g., "Reply", "Dismiss"):
+- [x] Parse the `actions` array from `Notify()` (alternating action_key / action_label strings)
+- [x] Render action buttons on the toast (e.g., "Reply", "Dismiss"):
   - Max 2 buttons inline
-  - `text.accent` styling on hover
-- [ ] On action button click: emit `ActionInvoked(id, action_key)` signal, then dismiss the toast
+  - Accent border + fill on hover
+- [x] On action button click: emit `ActionInvoked(id, action_key)` signal, then dismiss the toast
 
 ### Deliverables
 
