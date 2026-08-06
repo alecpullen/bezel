@@ -18,6 +18,8 @@
 #include "battery_service.hpp"
 #include "bus_manager.hpp"
 #include "control_socket.hpp"
+#include "notification_service.hpp"
+#include "notification_overlay.hpp"
 #include "desktop_index.hpp"
 #include "search_engine.hpp"
 #include "toplevel_service.hpp"
@@ -82,6 +84,9 @@ class App {
         bool                 ready_        = false;
         bool                 running_      = true;
         std::unique_ptr<BusManager> busManager_;
+        std::unique_ptr<NotificationService> notificationService_;
+        std::unique_ptr<NotificationOverlay> notificationOverlay_;
+        bool pointerOverOverlay_ = false;
         std::unique_ptr<BatteryService>   batteryService_;
         std::unique_ptr<ToplevelService>  toplevelService_;
         std::unique_ptr<WorkspaceService> workspaceService_;
@@ -92,6 +97,7 @@ class App {
         void handleSocketCommand(std::string_view cmd);
         void handleCommandAction(CommandAction action);
         Panel* activeLauncherTarget();
+        Output* activeOutput();
         void tick();
 };
 
@@ -166,6 +172,16 @@ void App::seat_caps(void* data, wl_seat* seat, uint32_t caps) {
 void App::ptr_enter(void* data, wl_pointer*, uint32_t, wl_surface* surface,
                     wl_fixed_t sx, wl_fixed_t sy) {
     auto* self = static_cast<App*>(data);
+    if (self->notificationOverlay_ && self->notificationOverlay_->surface() == surface) {
+        self->hoveredPanel_ = nullptr;
+        self->hoveredMenuOwner_ = nullptr;
+        self->pointerOverOverlay_ = true;
+        self->ptrX_ = wl_fixed_to_int(sx);
+        self->ptrY_ = wl_fixed_to_int(sy);
+        self->notificationOverlay_->handlePointerMotion(self->ptrX_, self->ptrY_);
+        return;
+    }
+    self->pointerOverOverlay_ = false;
     self->hoveredPanel_     = nullptr;
     self->hoveredMenuOwner_ = nullptr;
     for (auto& o : self->outputs_) {
@@ -185,6 +201,10 @@ void App::ptr_enter(void* data, wl_pointer*, uint32_t, wl_surface* surface,
 
 void App::ptr_leave(void* data, wl_pointer*, uint32_t, wl_surface*) {
     auto* self = static_cast<App*>(data);
+    if (self->pointerOverOverlay_ && self->notificationOverlay_) {
+        self->notificationOverlay_->handlePointerLeave();
+    }
+    self->pointerOverOverlay_ = false;
     if (self->hoveredPanel_) self->hoveredPanel_->handlePointerLeave();
     self->hoveredPanel_     = nullptr;
     self->hoveredMenuOwner_ = nullptr;
@@ -194,6 +214,10 @@ void App::ptr_motion(void* data, wl_pointer*, uint32_t, wl_fixed_t sx, wl_fixed_
     auto* self = static_cast<App*>(data);
     self->ptrX_ = wl_fixed_to_int(sx);
     self->ptrY_ = wl_fixed_to_int(sy);
+    if (self->pointerOverOverlay_ && self->notificationOverlay_) {
+        self->notificationOverlay_->handlePointerMotion(self->ptrX_, self->ptrY_);
+        return;
+    }
     if (self->hoveredMenuOwner_)
         self->hoveredMenuOwner_->handlePopupPointerMotion(self->ptrX_, self->ptrY_);
     else if (self->hoveredPanel_)
@@ -203,6 +227,10 @@ void App::ptr_motion(void* data, wl_pointer*, uint32_t, wl_fixed_t sx, wl_fixed_
 void App::ptr_button(void* data, wl_pointer*, uint32_t, uint32_t, uint32_t button, uint32_t state) {
     auto* self = static_cast<App*>(data);
     if (state != WL_POINTER_BUTTON_STATE_PRESSED) return;
+    if (self->pointerOverOverlay_ && self->notificationOverlay_) {
+        self->notificationOverlay_->handlePointerButton(self->ptrX_, self->ptrY_, button);
+        return;
+    }
     if (self->hoveredMenuOwner_)
         self->hoveredMenuOwner_->handlePopupPointerButton(self->ptrX_, self->ptrY_, button);
     else if (self->hoveredPanel_)
@@ -249,8 +277,22 @@ bool App::init() {
             batteryService_.reset();
         }
     }
+    if (busManager_->session()) {
+        notificationService_ = std::make_unique<NotificationService>(busManager_->session());
+        if (!notificationService_->init()) {
+            notificationService_.reset();
+        }
+    }
 
     for (auto& o : outputs_) create_panel(*o);
+    if (notificationService_ && compositor_ && layer_shell_ && !outputs_.empty()) {
+        Output* focus = activeOutput();
+        notificationOverlay_ = std::make_unique<NotificationOverlay>(
+            egl_, theme_, compositor_, layer_shell_,
+            focus ? focus->wl : nullptr,
+            focus ? focus->scale : 1,
+            *notificationService_);
+    }
     wl_display_roundtrip(display_);
     ready_ = true;
     return true;
@@ -349,6 +391,24 @@ Panel* App::activeLauncherTarget() {
     return nullptr;
 }
 
+Output* App::activeOutput() {
+    if (toplevelService_) {
+        for (const auto& t : toplevelService_->toplevels()) {
+            if (t->is_closed() || !t->info().activated) continue;
+            if (t->info().outputs.empty()) continue;
+            wl_output* target = t->info().outputs.front();
+            for (auto& o : outputs_)
+                if (o->wl == target) return o.get();
+        }
+    }
+    if (hoveredPanel_) {
+        for (auto& o : outputs_)
+            if (o->panel.get() == hoveredPanel_) return o.get();
+    }
+    if (!outputs_.empty()) return outputs_.front().get();
+    return nullptr;
+}
+
 void App::handleSocketCommand(std::string_view cmd) {
     if (cmd == "toggle_launcher") {
         // If any panel is already in launcher mode, dismiss it
@@ -388,6 +448,16 @@ void App::handleCommandAction(CommandAction action) {
 
 void App::tick() {
     if (!ready_) return;
+    if (notificationService_) {
+        notificationService_->tick();
+    }
+    if (notificationOverlay_) {
+        Output* focus = activeOutput();
+        if (focus) {
+            notificationOverlay_->setOutput(focus->wl, focus->scale);
+        }
+        notificationOverlay_->render();
+    }
     for (auto& o : outputs_) {
         if (o->panel) {
             o->panel->tick();
@@ -397,6 +467,8 @@ void App::tick() {
 }
 
 void App::finish() {
+    notificationOverlay_.reset();
+    notificationService_.reset();
     outputs_.clear();
     toplevelService_.reset();
     workspaceService_.reset();
