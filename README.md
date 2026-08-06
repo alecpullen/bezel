@@ -8,7 +8,7 @@ A single-process Wayland shell panel written in C++20. Designed for the **MangoW
 - Workspace switcher with tiling maps (via dwl-ipc)
 - Window list with app icons and active-window highlight
 - Battery status, clock
-- On-demand launcher (in progress)
+- On-demand launcher
 - Unix domain socket for external control (`$XDG_RUNTIME_DIR/bezel.sock`)
 - Nocturne theme (Tokyo Night-derived design tokens)
 

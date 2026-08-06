@@ -12,15 +12,20 @@
 | Milestone | Status | Est. complexity |
 |-----------|--------|-----------------|
 | M1 — Foundation | ✅ DONE | — |
-| M2 — Render core | 🔜 NEXT | High |
-| M3 — Services + first module | 📋 PLANNED | Medium |
-| M4 — Compositor backend | 📋 PLANNED | High |
-| M5 — Launcher | 📋 PLANNED | Medium |
-| M6 — Notifications | 📋 PLANNED | Medium |
+| M2 — Render core | ✅ DONE | High |
+| M3 — Services + first module | ✅ DONE | Medium |
+| M4 — Compositor backend | ✅ DONE | High |
+| M5 — Launcher | ✅ DONE | Medium |
+| M6 — Notifications | 🔜 NEXT | Medium |
 | M7 — OSD + status polish | 📋 PLANNED | Medium |
 | M8 — System tray | 📋 PLANNED | High |
 | M9 — Session: idle + lock + power | 📋 PLANNED | High |
 | M10 — Cohesion pass | 📋 PLANNED | Medium |
+
+> **Note:** The status table above is current, but the detailed milestone
+> sections below still reflect the original planning document. M2–M5 have been
+> implemented; their subsections and TODO lists are stale and should be treated
+> as historical reference only.
 
 ---
 

@@ -1,6 +1,6 @@
 mango/
 .kilo/
-AGENTS.md
 .claude/
 buildDir/
 .idea/
+session-*.md

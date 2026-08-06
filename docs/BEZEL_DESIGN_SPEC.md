@@ -186,9 +186,9 @@ A single unified surface type for both application notifications (via `org.freed
 | Piece | Milestone |
 |---|---|
 | Layer-surface foundation, panel on each output | M1 (done) |
-| Renderer + text + design tokens (§2) → styled panel | M2 |
-| Services foundation (battery, clock) → tray + clock | M3 |
-| Compositor IPC → workspaces; tiling maps (§3.1) | M4 |
-| Window list (foreign-toplevel) → window buttons | M4 |
-| Command mode (§3.2) | M5 |
+| Renderer + text + design tokens (§2) → styled panel | M2 (done) |
+| Services foundation (battery, clock) → tray + clock | M3 (done) |
+| Compositor IPC → workspaces; tiling maps (§3.1) | M4 (done) |
+| Window list (foreign-toplevel) → window buttons | M4 (done) |
+| Command mode (§3.2) | M5 (done) |
 | Design 2 vertical layout + morph (§4) | post-M5 |
