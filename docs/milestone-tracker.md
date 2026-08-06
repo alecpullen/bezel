@@ -16,7 +16,7 @@
 | M3 — Services + first module | ✅ DONE | Medium |
 | M4 — Compositor backend | ✅ DONE | High |
 | M5 — Launcher | ✅ DONE | Medium |
-| M6 — Notifications | 🔜 NEXT | Medium |
+| M6 — Notifications | ✅ DONE | Medium |
 | M7 — OSD + status polish | 📋 PLANNED | Medium |
 | M8 — System tray | 📋 PLANNED | High |
 | M9 — Session: idle + lock + power | 📋 PLANNED | High |
