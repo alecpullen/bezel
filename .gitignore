@@ -1,3 +1,5 @@
+docs/superpowers/
+marshal
 mango/
 .kilo/
 .claude/
@@ -5,3 +7,5 @@ buildDir/
 .idea/
 session-*.md
 .venv/
+.marshal/
+.worktrees/
