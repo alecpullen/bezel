@@ -134,6 +134,7 @@ void NotificationOverlay::createSurface() {
     zwlr_layer_surface_v1_set_margin(layer_surface_, 0, 0, bottomMargin, 0);
     zwlr_layer_surface_v1_set_exclusive_zone(layer_surface_, -1);
 
+    wl_surface_set_buffer_scale(surface_, scale_);
     wl_surface_commit(surface_);
 
     configured_ = false;
@@ -374,7 +375,10 @@ void NotificationOverlay::handlePointerButton(int x, int y, uint32_t button) {
     auto layouts = computeLayouts(width_);
     for (const auto& tl : layouts) {
         if (x < tl.x || x >= tl.x + tl.w || y < tl.y || y >= tl.y + tl.h) continue;
-        int by = tl.y + tl.h - (int)theme_.panelPad - ACTION_BUTTON_H;
+        float lineH = theme_.labelPrimaryPx * 1.5f;
+        int by = tl.y + (int)theme_.panelPad + (int)lineH
+               + (tl.notification->body.empty() ? 0 : (int)lineH)
+               + (int)theme_.gapItem;
         for (const auto& [key, rect] : tl.actionButtons) {
             int bx = rect.first;
             int bw = rect.second;
@@ -402,9 +406,11 @@ void NotificationOverlay::handle_configure(void* data, zwlr_layer_surface_v1* s,
 
     int width  = w > 0 ? (int)w : self->width_;
     int height = h > 0 ? (int)h : self->height_;
+    int physW = width  * self->scale_;
+    int physH = height * self->scale_;
 
     if (!self->egl_window_) {
-        self->egl_window_  = wl_egl_window_create(self->surface_, width, height);
+        self->egl_window_  = wl_egl_window_create(self->surface_, physW, physH);
         self->egl_surface_ = eglCreateWindowSurface(self->egl_.display(), self->egl_.config(),
                                                      (EGLNativeWindowType)self->egl_window_, nullptr);
         self->renderer_ = std::make_unique<Renderer>(self->theme_, self->egl_);
@@ -413,11 +419,12 @@ void NotificationOverlay::handle_configure(void* data, zwlr_layer_surface_v1* s,
             self->renderer_.reset();
             return;
         }
+        self->renderer_->setPixelRatio((float)self->scale_);
         self->fontCache_   = std::make_unique<FontCache>(self->renderer_->ctx());
         self->iconLoader_  = std::make_unique<IconLoader>(self->renderer_->ctx());
         g_overlayFont      = self->fontCache_->loadSans();
     } else {
-        wl_egl_window_resize(self->egl_window_, width, height, 0, 0);
+        wl_egl_window_resize(self->egl_window_, physW, physH, 0, 0);
     }
 
     self->configured_ = true;
