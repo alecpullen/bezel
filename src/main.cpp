@@ -8,7 +8,6 @@
 #include <poll.h>
 #include <linux/input-event-codes.h>
 #include <wayland-client-protocol.h>
-#include <sdbus-c++/sdbus-c++.h>
 #include "egl.hpp"
 #include "panel.hpp"
 #include "protocol.hpp"

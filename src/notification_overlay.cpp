@@ -365,7 +365,10 @@ void NotificationOverlay::handlePointerMotion(int x, int y) {
         }
     }
     if (hover != hoverToast_) {
+        int prev = hoverToast_;
         hoverToast_ = hover;
+        if (prev >= 0) service_.setHovered((uint32_t)prev, false);
+        if (hover >= 0) service_.setHovered((uint32_t)hover, true);
         dirty_ = true;
     }
 }
@@ -373,12 +376,26 @@ void NotificationOverlay::handlePointerMotion(int x, int y) {
 void NotificationOverlay::handlePointerButton(int x, int y, uint32_t button) {
     if (button != BTN_LEFT) return;
     auto layouts = computeLayouts(width_);
+    NVGcontext* vg = renderer_ ? renderer_->ctx() : nullptr;
     for (const auto& tl : layouts) {
         if (x < tl.x || x >= tl.x + tl.w || y < tl.y || y >= tl.y + tl.h) continue;
         float lineH = theme_.labelPrimaryPx * 1.5f;
-        int by = tl.y + (int)theme_.panelPad + (int)lineH
-               + (tl.notification->body.empty() ? 0 : (int)lineH)
-               + (int)theme_.gapItem;
+        int pad = (int)theme_.panelPad;
+        float ty = (float)tl.y + pad;
+        ty += lineH; // summary
+        if (!tl.notification->body.empty()) {
+            if (tl.expanded) {
+                int textX = pad + ICON_SIZE + (int)theme_.gapItem;
+                int textW = tl.w - textX - pad;
+                if (textW < 10) textW = 10;
+                auto lines = wrapText(vg, g_overlayFont, theme_.labelSecondaryPx,
+                                      tl.notification->body, (float)textW);
+                ty += (float)lines.size() * lineH;
+            } else {
+                ty += lineH;
+            }
+        }
+        int by = (int)ty + (int)theme_.gapItem;
         for (const auto& [key, rect] : tl.actionButtons) {
             int bx = rect.first;
             int bw = rect.second;
@@ -394,6 +411,7 @@ void NotificationOverlay::handlePointerButton(int x, int y, uint32_t button) {
 
 void NotificationOverlay::handlePointerLeave() {
     if (hoverToast_ != -1) {
+        service_.setHovered((uint32_t)hoverToast_, false);
         hoverToast_ = -1;
         dirty_ = true;
     }
@@ -433,5 +451,7 @@ void NotificationOverlay::handle_configure(void* data, zwlr_layer_surface_v1* s,
 }
 
 void NotificationOverlay::handle_closed(void* data, zwlr_layer_surface_v1*) {
-    (void)data;
+    auto* self = static_cast<NotificationOverlay*>(data);
+    self->configured_ = false;
+    self->dirty_ = true;
 }

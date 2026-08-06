@@ -132,6 +132,12 @@ void NotificationService::closeNotification(uint32_t id, uint32_t reason) {
     } catch (...) {}
 }
 
+void NotificationService::setHovered(uint32_t id, bool hovered) {
+    auto it = notifications_.find(id);
+    if (it == notifications_.end()) return;
+    it->second.hovered = hovered;
+}
+
 void NotificationService::invokeAction(uint32_t id, const std::string& action_key) {
     auto it = notifications_.find(id);
     if (it == notifications_.end()) return;

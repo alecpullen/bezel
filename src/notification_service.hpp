@@ -30,6 +30,7 @@ public:
 
     void closeNotification(uint32_t id, uint32_t reason);
     void invokeAction(uint32_t id, const std::string& action_key);
+    void setHovered(uint32_t id, bool hovered);
 
 private:
     void registerObject();
