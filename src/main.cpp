@@ -172,6 +172,7 @@ void App::ptr_enter(void* data, wl_pointer*, uint32_t, wl_surface* surface,
                     wl_fixed_t sx, wl_fixed_t sy) {
     auto* self = static_cast<App*>(data);
     if (self->notificationOverlay_ && self->notificationOverlay_->surface() == surface) {
+        if (self->hoveredPanel_) self->hoveredPanel_->handlePointerLeave();
         self->hoveredPanel_ = nullptr;
         self->hoveredMenuOwner_ = nullptr;
         self->pointerOverOverlay_ = true;

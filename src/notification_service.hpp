@@ -42,7 +42,6 @@ private:
                     int32_t expire_timeout);
 
     sdbus::IConnection* conn_ = nullptr;
-    std::unique_ptr<sdbus::IConnection> ownedConn_;
     std::unique_ptr<sdbus::IObject> object_;
     std::map<uint32_t, Notification> notifications_;
     uint32_t nextId_ = 1;

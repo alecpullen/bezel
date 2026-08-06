@@ -341,7 +341,9 @@ void NotificationOverlay::render() {
     if (!dirty_) return;
     dirty_ = false;
 
+    int oldW = width_, oldH = height_;
     updateGeometry();
+    if (width_ != oldW || height_ != oldH) return; // size changed; configure will re-render
 
     renderer_->beginFrame(width_, height_);
     renderer_->clear();
