@@ -16,6 +16,7 @@
 #include "renderer.hpp"
 #include "font_cache.hpp"
 #include "battery_service.hpp"
+#include "bus_manager.hpp"
 #include "control_socket.hpp"
 #include "desktop_index.hpp"
 #include "search_engine.hpp"
@@ -80,7 +81,7 @@ class App {
         std::vector<std::unique_ptr<Output>> outputs_;
         bool                 ready_        = false;
         bool                 running_      = true;
-        std::unique_ptr<sdbus::IConnection> dbusConn_;
+        std::unique_ptr<BusManager> busManager_;
         std::unique_ptr<BatteryService>   batteryService_;
         std::unique_ptr<ToplevelService>  toplevelService_;
         std::unique_ptr<WorkspaceService> workspaceService_;
@@ -241,14 +242,12 @@ bool App::init() {
     if (!controlSocket_->init())
         controlSocket_.reset();
 
-    try {
-        dbusConn_ = sdbus::createSystemBusConnection();
-        batteryService_ = std::make_unique<BatteryService>(*dbusConn_);
+    busManager_ = std::make_unique<BusManager>();
+    if (busManager_->system()) {
+        batteryService_ = std::make_unique<BatteryService>(busManager_->system());
         if (!batteryService_->init()) {
             batteryService_.reset();
         }
-    } catch (const sdbus::Error& e) {
-        fprintf(stderr, "Warning: Failed to connect to D-Bus system bus: %s\n", e.what());
     }
 
     for (auto& o : outputs_) create_panel(*o);
@@ -275,34 +274,29 @@ void App::run() {
 
         int wlFd = wl_display_get_fd(display_);
 
-        struct pollfd fds[4];
-        int nfds = 0;
-        int wlIdx = nfds++;
-        fds[wlIdx] = { wlFd, POLLIN, 0 };
+        std::vector<pollfd> pollFds;
+        pollFds.push_back({wlFd, POLLIN, 0});
 
-        int dbusIdx = -1, dbusEventIdx = -1;
-        int timeout = 1000;
-        sdbus::IConnection::PollData dbusPoll{};
-        if (dbusConn_) {
-            dbusPoll   = dbusConn_->getEventLoopPollData();
-            int dbusTo = dbusPoll.getPollTimeout();
-            if (dbusTo >= 0 && dbusTo < timeout) timeout = dbusTo;
-            dbusIdx      = nfds++;
-            fds[dbusIdx] = { dbusPoll.fd, dbusPoll.events, 0 };
-            dbusEventIdx      = nfds++;
-            fds[dbusEventIdx] = { dbusPoll.eventFd, POLLIN, 0 };
+        if (busManager_) {
+            for (const auto& p : busManager_->pollFds()) {
+                pollFds.push_back(p);
+            }
         }
 
-        int sockIdx = -1;
         if (controlSocket_) {
-            sockIdx      = nfds++;
-            fds[sockIdx] = { controlSocket_->fd(), POLLIN, 0 };
+            pollFds.push_back({controlSocket_->fd(), POLLIN, 0});
         }
 
-        int ret = poll(fds, nfds, timeout);
+        int timeout = 1000;
+        if (busManager_) {
+            int busTimeout = busManager_->pollTimeout();
+            if (busTimeout >= 0 && busTimeout < timeout) timeout = busTimeout;
+        }
+
+        int ret = poll(pollFds.data(), pollFds.size(), timeout);
 
         if (ret > 0) {
-            if (fds[wlIdx].revents & POLLIN) {
+            if (pollFds[0].revents & POLLIN) {
                 if (wl_display_read_events(display_) < 0) break;
             } else {
                 wl_display_cancel_read(display_);
@@ -311,10 +305,10 @@ void App::run() {
             wl_display_cancel_read(display_);
         }
 
-        if (dbusConn_)
-            dbusConn_->processPendingEvent();
+        if (busManager_)
+            busManager_->processPending();
 
-        if (sockIdx >= 0 && (fds[sockIdx].revents & POLLIN))
+        if (controlSocket_ && (pollFds.back().revents & POLLIN))
             controlSocket_->dispatch([this](std::string_view cmd){ handleSocketCommand(cmd); });
         
         if (wl_display_dispatch_pending(display_) < 0) {

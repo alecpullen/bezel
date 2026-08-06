@@ -1,20 +1,24 @@
 #include "battery_service.hpp"
 #include <cstdio>
 
-BatteryService::BatteryService(sdbus::IConnection& dbusConn)
+BatteryService::BatteryService(sdbus::IConnection* dbusConn)
     : dbusConn_(dbusConn) {}
 
 bool BatteryService::init() {
+    if (!dbusConn_) {
+        std::fprintf(stderr, "BatteryService: no system bus connection\n");
+        return false;
+    }
     try {
         sdbus::ObjectPath displayDevicePath;
-        auto managerProxy = sdbus::createProxy(dbusConn_,
+        auto managerProxy = sdbus::createProxy(*dbusConn_,
                                                sdbus::ServiceName{"org.freedesktop.UPower"},
                                                sdbus::ObjectPath{"/org/freedesktop/UPower"});
         managerProxy->callMethod("GetDisplayDevice")
                     .onInterface("org.freedesktop.UPower")
                     .storeResultsTo(displayDevicePath);
 
-        deviceProxy_ = sdbus::createProxy(dbusConn_,
+        deviceProxy_ = sdbus::createProxy(*dbusConn_,
                                           sdbus::ServiceName{"org.freedesktop.UPower"},
                                           displayDevicePath);
 

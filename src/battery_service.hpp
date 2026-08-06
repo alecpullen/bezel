@@ -15,7 +15,7 @@ struct BatteryInfo {
 
 class BatteryService : public Service {
 public:
-    BatteryService(sdbus::IConnection& dbusConn);
+    BatteryService(sdbus::IConnection* dbusConn);
     ~BatteryService() override = default;
 
     bool init() override;
@@ -29,7 +29,7 @@ private:
                              const std::vector<std::string>& invalidatedProperties);
     void updateFromProperties(const std::map<sdbus::PropertyName, sdbus::Variant>& properties);
 
-    sdbus::IConnection& dbusConn_;
+    sdbus::IConnection* dbusConn_;
     std::unique_ptr<sdbus::IProxy> deviceProxy_;
     BatteryInfo current_;
     bool dirty_ = false;
