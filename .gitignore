@@ -4,3 +4,4 @@ mango/
 buildDir/
 .idea/
 session-*.md
+.venv/
