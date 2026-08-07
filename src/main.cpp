@@ -15,6 +15,7 @@
 #include "renderer.hpp"
 #include "font_cache.hpp"
 #include "battery_service.hpp"
+#include "brightness_service.hpp"
 #include "bus_manager.hpp"
 #include "control_socket.hpp"
 #include "notification_service.hpp"
@@ -87,6 +88,7 @@ class App {
         std::unique_ptr<NotificationOverlay> notificationOverlay_;
         bool pointerOverOverlay_ = false;
         std::unique_ptr<BatteryService>   batteryService_;
+        std::unique_ptr<BrightnessService> brightnessService_;
         std::unique_ptr<ToplevelService>  toplevelService_;
         std::unique_ptr<WorkspaceService> workspaceService_;
         std::unique_ptr<DesktopIndex>     desktopIndex_;
@@ -277,6 +279,10 @@ bool App::init() {
             batteryService_.reset();
         }
     }
+    brightnessService_ = std::make_unique<BrightnessService>();
+    if (!brightnessService_->init()) {
+        brightnessService_.reset();
+    }
     if (busManager_->session()) {
         notificationService_ = std::make_unique<NotificationService>(busManager_->session());
         if (!notificationService_->init()) {
@@ -325,6 +331,10 @@ void App::run() {
             }
         }
 
+        if (brightnessService_ && brightnessService_->inotifyFd() >= 0) {
+            pollFds.push_back({brightnessService_->inotifyFd(), POLLIN, 0});
+        }
+
         if (controlSocket_) {
             pollFds.push_back({controlSocket_->fd(), POLLIN, 0});
         }
@@ -359,6 +369,9 @@ void App::run() {
 
         if (batteryService_) {
             batteryService_->tick();
+        }
+        if (brightnessService_) {
+            brightnessService_->tick();
         }
         if (toplevelService_) {
             toplevelService_->tick();
@@ -469,6 +482,7 @@ void App::tick() {
 void App::finish() {
     notificationOverlay_.reset();
     notificationService_.reset();
+    brightnessService_.reset();
     outputs_.clear();
     toplevelService_.reset();
     workspaceService_.reset();
