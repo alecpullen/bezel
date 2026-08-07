@@ -48,17 +48,19 @@ void NetworkService::refresh() {
         }
         sdbus::ObjectPath activePath = conns.front();
 
-        activeConnProxy_ = sdbus::createProxy(*conn_,
-            sdbus::ServiceName{"org.freedesktop.NetworkManager"},
-            activePath);
+        if (!activeConnProxy_ || activeConnProxy_->getObjectPath() != activePath) {
+            activeConnProxy_ = sdbus::createProxy(*conn_,
+                sdbus::ServiceName{"org.freedesktop.NetworkManager"},
+                activePath);
 
-        activeConnProxy_->uponSignal("PropertiesChanged")
-            .onInterface("org.freedesktop.DBus.Properties")
-            .call([this](const std::string& iface,
-                         const std::map<sdbus::PropertyName, sdbus::Variant>& changed,
-                         const std::vector<std::string>& invalidated) {
-                this->onPropertiesChanged(iface, changed, invalidated);
-            });
+            activeConnProxy_->uponSignal("PropertiesChanged")
+                .onInterface("org.freedesktop.DBus.Properties")
+                .call([this](const std::string& iface,
+                             const std::map<sdbus::PropertyName, sdbus::Variant>& changed,
+                             const std::vector<std::string>& invalidated) {
+                    this->onPropertiesChanged(iface, changed, invalidated);
+                });
+        }
 
         // Connection type
         sdbus::ObjectPath specificPath =
@@ -84,9 +86,10 @@ void NetworkService::refresh() {
                         apProxy->getProperty("Ssid")
                             .onInterface("org.freedesktop.NetworkManager.AccessPoint"));
                 ni.ssid.assign(ssid.begin(), ssid.end());
-                ni.strength = static_cast<int>(
+                uint8_t st = static_cast<uint8_t>(
                     apProxy->getProperty("Strength")
                         .onInterface("org.freedesktop.NetworkManager.AccessPoint"));
+                ni.strength = static_cast<int>(st);
             }
         } else if (typeStr == "802-3-ethernet" || typeStr == "ethernet") {
             ni.type = NetworkInfo::Type::Wired;
