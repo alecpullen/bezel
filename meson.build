@@ -13,12 +13,13 @@ sdbus_cpp = dependency('sdbus-c++')
 freetype  = dependency('freetype2', required : false)
 harfbuzz  = dependency('harfbuzz', required : false)
 librsvg   = dependency('librsvg-2.0', required : false)
-pipewire  = dependency('libpipewire-0.3', required : false)
-libcurl   = dependency('libcurl',        required : false)
 
 if librsvg.found()
   add_project_arguments('-DHAVE_LIBRSVG', language : 'cpp')
 endif
+
+pipewire  = dependency('libpipewire-0.3', required : false)
+libcurl   = dependency('libcurl',        required : false)
 
 if pipewire.found()
   add_project_arguments('-DHAVE_PIPEWIRE', language : 'cpp')
