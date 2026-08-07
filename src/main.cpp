@@ -17,6 +17,7 @@
 #include "battery_service.hpp"
 #include "brightness_service.hpp"
 #include "audio_service.hpp"
+#include "network_service.hpp"
 #include "bus_manager.hpp"
 #include "control_socket.hpp"
 #include "notification_service.hpp"
@@ -91,6 +92,7 @@ class App {
         std::unique_ptr<BatteryService>   batteryService_;
         std::unique_ptr<BrightnessService> brightnessService_;
         std::unique_ptr<AudioService>      audioService_;
+        std::unique_ptr<NetworkService>    networkService_;
         std::unique_ptr<ToplevelService>  toplevelService_;
         std::unique_ptr<WorkspaceService> workspaceService_;
         std::unique_ptr<DesktopIndex>     desktopIndex_;
@@ -280,6 +282,10 @@ bool App::init() {
         if (!batteryService_->init()) {
             batteryService_.reset();
         }
+        networkService_ = std::make_unique<NetworkService>(busManager_->system());
+        if (!networkService_->init()) {
+            networkService_.reset();
+        }
     }
     brightnessService_ = std::make_unique<BrightnessService>();
     if (!brightnessService_->init()) {
@@ -385,6 +391,9 @@ void App::run() {
         }
         if (audioService_) {
             audioService_->tick();
+        }
+        if (networkService_) {
+            networkService_->tick();
         }
         if (toplevelService_) {
             toplevelService_->tick();
@@ -495,6 +504,7 @@ void App::tick() {
 void App::finish() {
     notificationOverlay_.reset();
     notificationService_.reset();
+    networkService_.reset();
     audioService_.reset();
     brightnessService_.reset();
     outputs_.clear();
