@@ -17,13 +17,13 @@
 | M4 — Compositor backend | ✅ DONE | High |
 | M5 — Launcher | ✅ DONE | Medium |
 | M6 — Notifications | ✅ DONE | Medium |
-| M7 — OSD + status polish | 📋 PLANNED | Medium |
+| M7 — OSD + status polish | ✅ DONE | Medium |
 | M8 — System tray | 📋 PLANNED | High |
 | M9 — Session: idle + lock + power | 📋 PLANNED | High |
 | M10 — Cohesion pass | 📋 PLANNED | Medium |
 
 > **Note:** The status table above is current, but the detailed milestone
-> sections below still reflect the original planning document. M2–M5 have been
+> sections below still reflect the original planning document. M2–M7 have been
 > implemented; their subsections and TODO lists are stale and should be treated
 > as historical reference only.
 

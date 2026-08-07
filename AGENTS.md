@@ -29,8 +29,11 @@ App (main.cpp)
   ├── Wayland registry → wl_compositor, zwlr_layer_shell_v1, wl_output, wl_seat,
   │   zwlr_foreign_toplevel_manager_v1, zdwl_ipc_manager_v2
   ├── Egl (shared across all panels)
-  ├── D-Bus system connection + Services (singletons, owned by App):
-  │     BatteryService, ToplevelService, WorkspaceService   (Service base class)
+  │   ├── D-Bus system connection + Services (singletons, owned by App):
+  │   │     BatteryService, ToplevelService, WorkspaceService,
+  │   │     NetworkService, MprisService, NotificationService   (Service base class)
+  │   ├── AudioService (PipeWire), BrightnessService (sysfs+inotify)
+  │   ├── OsdOverlay + NotificationOverlay (singleton focus-following surfaces)
   ├── DesktopIndex + SearchEngine (launcher data)
   ├── ControlSocket ($XDG_RUNTIME_DIR/bezel.sock)
   └── Output[] → Panel (one per monitor)
@@ -110,9 +113,13 @@ The source tree implements M1–M5:
 - **M5 Launcher** — `.desktop` parser (`DesktopIndex`), Unix-domain control
   socket, fuzzy search (`SearchEngine`), keyboard-interactive launcher surface
   with app/window/command results.
+- **M7 OSD + status polish** — `AudioService` (PipeWire) with `VolumeWidget` and volume OSD,
+  `BrightnessService` (sysfs + inotify) with brightness OSD, `NetworkService`
+  (NetworkManager D-Bus) with `NetworkWidget`, `MprisService` (session D-Bus + libcurl art)
+  with `MprisWidget`. Shared `OsdOverlay` surface reuses the M6 notification overlay machinery.
 
-M6–M10 are not yet implemented: notifications, OSD (volume/brightness/network),
-system tray (SNI), session lock/power, config/theming/animation cohesion pass.
+M8–M10 are not yet implemented: notifications, system tray (SNI),
+session lock/power, config/theming/animation cohesion pass.
 
 Note: `docs/milestone-tracker.md` is currently stale and still lists M2 as the
 next milestone.
