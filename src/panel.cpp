@@ -5,6 +5,9 @@
 #include "clock.hpp"
 #include "battery_service.hpp"
 #include "battery_widget.hpp"
+#include "volume_widget.hpp"
+#include "brightness_widget.hpp"
+#include "network_widget.hpp"
 #include "icon_loader.hpp"
 #include "toplevel_service.hpp"
 #include "window_list.hpp"
@@ -19,8 +22,8 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-Panel::Panel(Theme& theme, Egl& egl, wl_compositor* compositor, zwlr_layer_shell_v1* shell, wl_output* output, const char* name, BatteryService* batteryService, ToplevelService* toplevelService, WorkspaceService* workspaceService, wl_seat* seat)
-    : egl_(egl), theme_(theme), compositor_(compositor), layer_shell_(shell), output_(output), seat_(seat), batteryService_(batteryService), toplevelService_(toplevelService), workspaceService_(workspaceService) {
+Panel::Panel(Theme& theme, Egl& egl, wl_compositor* compositor, zwlr_layer_shell_v1* shell, wl_output* output, const char* name, BatteryService* batteryService, ToplevelService* toplevelService, WorkspaceService* workspaceService, AudioService* audioService, BrightnessService* brightnessService, NetworkService* networkService, MprisService* mprisService, wl_seat* seat)
+    : egl_(egl), theme_(theme), compositor_(compositor), layer_shell_(shell), output_(output), seat_(seat), batteryService_(batteryService), toplevelService_(toplevelService), workspaceService_(workspaceService), audioService_(audioService), brightnessService_(brightnessService), networkService_(networkService), mprisService_(mprisService) {
     surface_ = wl_compositor_create_surface(compositor);
     layer_surface_ = zwlr_layer_shell_v1_get_layer_surface(shell, surface_, output, ZWLR_LAYER_SHELL_V1_LAYER_TOP, name);
 
@@ -111,11 +114,19 @@ void Panel::resize(int w, int h) {
                 root_->addChild(std::move(wl));
             }
             root_->addSpacer();
+            if (networkService_) {
+                auto net = std::make_unique<NetworkWidget>(theme_, renderer_->ctx(), fontHandle_, *networkService_);
+                net->setCallback([this] { requestRedraw(); });
+                root_->addChild(std::move(net));
+            }
+            if (audioService_) {
+                auto vol = std::make_unique<VolumeWidget>(theme_, renderer_->ctx(), fontHandle_, *audioService_);
+                vol->setCallback([this] { requestRedraw(); });
+                root_->addChild(std::move(vol));
+            }
             if (batteryService_) {
                 auto battery = std::make_unique<BatteryWidget>(theme_, renderer_->ctx(), fontHandle_, *batteryService_);
-                battery->setCallback([this] {
-                    requestRedraw();
-                });
+                battery->setCallback([this] { requestRedraw(); });
                 root_->addChild(std::move(battery));
             }
             auto clock = std::make_unique<Clock>(theme_, renderer_->ctx(), fontHandle_);

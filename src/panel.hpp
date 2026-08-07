@@ -20,6 +20,10 @@ class Egl;
 class BatteryService;
 class ToplevelService;
 class WorkspaceService;
+class AudioService;
+class BrightnessService;
+class NetworkService;
+class MprisService;
 class WindowList;
 class Clock;
 class ContextMenuSurface;
@@ -30,6 +34,8 @@ public:
     Panel(Theme& theme, Egl& egl, wl_compositor* compositor, zwlr_layer_shell_v1* shell,
           wl_output* output, const char* name, BatteryService* batteryService,
           ToplevelService* toplevelService, WorkspaceService* workspaceService,
+          AudioService* audioService, BrightnessService* brightnessService,
+          NetworkService* networkService, MprisService* mprisService,
           wl_seat* seat);
     ~Panel();
 
@@ -78,6 +84,10 @@ private:
     BatteryService*        batteryService_  = nullptr;
     ToplevelService*       toplevelService_ = nullptr;
     WorkspaceService*      workspaceService_= nullptr;
+    AudioService*        audioService_       = nullptr;
+    BrightnessService*   brightnessService_  = nullptr;
+    NetworkService*      networkService_     = nullptr;
+    MprisService*        mprisService_       = nullptr;
     wl_surface*            surface_         = nullptr;
     zwlr_layer_surface_v1* layer_surface_   = nullptr;
     wl_egl_window*         egl_window_      = nullptr;

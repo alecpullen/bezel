@@ -110,7 +110,10 @@ class App {
 
 void App::create_panel(Output& o) {
     if (!compositor_ || !layer_shell_) return;
-    o.panel = std::make_unique<Panel>(theme_, egl_, compositor_, layer_shell_, o.wl, o.name[0] ? o.name : "panel", batteryService_.get(), toplevelService_.get(), workspaceService_.get(), seat_);
+    o.panel = std::make_unique<Panel>(theme_, egl_, compositor_, layer_shell_, o.wl, o.name[0] ? o.name : "panel",
+        batteryService_.get(), toplevelService_.get(), workspaceService_.get(),
+        audioService_.get(), brightnessService_.get(), networkService_.get(), mprisService_.get(),
+        seat_);
     o.panel->setScale(o.scale);
 }
 
