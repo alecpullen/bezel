@@ -127,7 +127,7 @@ int SniIconLoader::fromIconName(const std::string& name, const std::string& them
                 cairo_t* cr = cairo_create(surf);
                 RsvgRectangle vp = { 0.0, 0.0, (double)SIZE, (double)SIZE };
                 rsvg_handle_render_document(handle, cr, &vp, &err);
-                if (err) g_error_free(err);
+                if (err) { g_error_free(err); err = nullptr; }
                 cairo_destroy(cr);
                 g_object_unref(handle);
                 cairo_surface_flush(surf);
@@ -193,7 +193,7 @@ int SniIconLoader::fromIconName(const std::string& name, const std::string& them
                 cairo_t* cr = cairo_create(surf);
                 RsvgRectangle vp = { 0.0, 0.0, (double)SIZE, (double)SIZE };
                 rsvg_handle_render_document(handle, cr, &vp, &err);
-                if (err) g_error_free(err);
+                if (err) { g_error_free(err); err = nullptr; }
                 cairo_destroy(cr);
                 g_object_unref(handle);
                 cairo_surface_flush(surf);
