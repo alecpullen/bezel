@@ -63,7 +63,7 @@ void MprisWidget::render(const Renderer& renderer) const {
     int x = x_, y = y_;
 
     // Art thumbnail (or placeholder)
-    int artH = svc_.artHandle();
+    int artH = svc_.artHandle(vg);
     if (artH > 0) {
         NVGpaint ip = nvgImagePattern(vg, (float)x, (float)y,
                                        (float)ART_SIZE, (float)ART_SIZE, 0, artH, 1.0f);

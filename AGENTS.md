@@ -29,11 +29,11 @@ App (main.cpp)
   ├── Wayland registry → wl_compositor, zwlr_layer_shell_v1, wl_output, wl_seat,
   │   zwlr_foreign_toplevel_manager_v1, zdwl_ipc_manager_v2
   ├── Egl (shared across all panels)
-  │   ├── D-Bus system connection + Services (singletons, owned by App):
-  │   │     BatteryService, ToplevelService, WorkspaceService,
-  │   │     NetworkService, MprisService, NotificationService   (Service base class)
-  │   ├── AudioService (PipeWire), BrightnessService (sysfs+inotify)
-  │   ├── OsdOverlay + NotificationOverlay (singleton focus-following surfaces)
+  ├── D-Bus system connection + Services (singletons, owned by App):
+  │     BatteryService, ToplevelService, WorkspaceService,
+  │     NetworkService, MprisService, NotificationService   (Service base class)
+  ├── AudioService (PipeWire), BrightnessService (sysfs+inotify)
+  ├── OsdOverlay + NotificationOverlay (singleton focus-following surfaces)
   ├── DesktopIndex + SearchEngine (launcher data)
   ├── ControlSocket ($XDG_RUNTIME_DIR/bezel.sock)
   └── Output[] → Panel (one per monitor)

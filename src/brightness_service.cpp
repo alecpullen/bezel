@@ -1,7 +1,6 @@
 #include "brightness_service.hpp"
 #include <cstdio>
 #include <dirent.h>
-#include <fcntl.h>
 #include <sys/inotify.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -67,6 +66,10 @@ bool BrightnessService::init() {
         inotifyFd_ = -1;
         return false;
     }
+
+    // The initial read is baseline state, not a change to report; the OSD
+    // must not pop up at startup.
+    dirty_ = false;
 
     return true;
 }

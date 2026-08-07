@@ -114,12 +114,20 @@ bool AudioService::init() {
     pw_registry_add_listener(registry_, &registryListener_, &reg_events, this);
 
     coreSyncSeq_ = pw_core_sync(core_, PW_ID_CORE, 0);
-    pw_main_loop_iterate(loop_, -1);
+    // Bound the sync roundtrip so startup cannot hang if the PipeWire daemon
+    // is unreachable: poll briefly instead of blocking forever. The core done
+    // callback quits the loop early once the sync seq is answered.
+    for (int i = 0; i < 10 && !sinkBound_; ++i) {
+        pw_main_loop_iterate(loop_, 50);
+    }
 
     if (!sinkBound_) {
         std::fprintf(stderr, "AudioService: no Audio/Sink node found\n");
         return false;
     }
+    // The initial params are baseline state, not a change to report; the OSD
+    // must not pop up at startup.
+    dirty_ = false;
     return true;
 }
 

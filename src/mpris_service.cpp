@@ -5,7 +5,7 @@
 static const char* MPRIS_PREFIX = "org.mpris.MediaPlayer2.";
 
 MprisService::MprisService(sdbus::IConnection* conn, NVGcontext* vg)
-    : conn_(conn), vg_(vg), artLoader_(vg) {}
+    : conn_(conn), artLoader_(vg) {}
 
 bool MprisService::init() {
     if (!conn_) {
@@ -160,7 +160,8 @@ void MprisService::refreshPlayer() {
             current_.artist = artist;
             current_.artUrl = artUrl;
             current_.status = s;
-            if (!artUrl.empty()) artLoader_.request(artUrl);
+            // request("") clears the old art when the track/player has none.
+            artLoader_.request(artUrl);
             dirty_ = true;
         }
     } catch (const sdbus::Error& e) {
@@ -175,19 +176,15 @@ void MprisService::onPlayerPropertiesChanged(const std::string& /*iface*/,
 }
 
 void MprisService::setNvgContext(NVGcontext* vg) {
-    if (vg_ == nullptr && vg != nullptr) {
-        vg_ = vg;
-        artLoader_.setNvgContext(vg);
-        // Re-request art if we already have a URL queued
-        if (!current_.artUrl.empty()) artLoader_.request(current_.artUrl);
-    }
+    if (!vg) return;
+    artLoader_.setNvgContext(vg);
 }
 
 bool MprisService::tick() {
     // Drive art loader
-    int oldHandle = artLoader_.imageHandle();
+    int oldGen = artLoader_.imageGeneration();
     artLoader_.tick();
-    if (artLoader_.imageHandle() != oldHandle) {
+    if (artLoader_.imageGeneration() != oldGen) {
         dirty_ = true;
     }
     if (dirty_) {

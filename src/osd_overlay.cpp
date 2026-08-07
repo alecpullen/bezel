@@ -183,6 +183,14 @@ void OsdOverlay::handle_configure(void* data, zwlr_layer_surface_v1* s,
         if (!self->renderer_->init(self->egl_surface_)) {
             std::fprintf(stderr, "OsdOverlay: renderer init failed\n");
             self->renderer_.reset();
+            if (self->egl_surface_ != EGL_NO_SURFACE) {
+                eglDestroySurface(self->egl_.display(), self->egl_surface_);
+                self->egl_surface_ = EGL_NO_SURFACE;
+            }
+            if (self->egl_window_) {
+                wl_egl_window_destroy(self->egl_window_);
+                self->egl_window_ = nullptr;
+            }
             return;
         }
         self->renderer_->setPixelRatio((float)self->scale_);

@@ -550,9 +550,8 @@ void App::tick() {
     if (!ready_) return;
     if (mprisService_) {
         for (auto& o : outputs_) {
-            if (o->panel && o->panel->rendererNvg()) {
+            if (o->panel) {
                 mprisService_->setNvgContext(o->panel->rendererNvg());
-                break;
             }
         }
     }
@@ -582,14 +581,16 @@ void App::tick() {
 }
 
 void App::finish() {
-    mprisService_.reset();
     osdOverlay_.reset();
     notificationOverlay_.reset();
     notificationService_.reset();
+    // Panels (and their widgets) must be destroyed before the services they
+    // subscribe to, so widget destructors can unsubscribe from live services.
+    outputs_.clear();
+    mprisService_.reset();
     networkService_.reset();
     audioService_.reset();
     brightnessService_.reset();
-    outputs_.clear();
     toplevelService_.reset();
     workspaceService_.reset();
     if (pointer_) { wl_pointer_release(pointer_); pointer_ = nullptr; }

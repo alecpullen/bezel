@@ -25,7 +25,7 @@ public:
 
     const MprisInfo& info() const { return current_; }
     void setNvgContext(NVGcontext* vg);
-    int artHandle() const { return artLoader_.imageHandle(); }
+    int artHandle(NVGcontext* vg) const { return artLoader_.imageHandle(vg); }
     int artFd() const { return artLoader_.curlFd(); }
     int artTimeout() const { return artLoader_.curlTimeout(); }
 
@@ -40,7 +40,6 @@ private:
                                    const std::vector<std::string>& invalidated);
 
     sdbus::IConnection* conn_ = nullptr;
-    NVGcontext* vg_ = nullptr;
     std::unique_ptr<sdbus::IProxy> dbusProxy_;          // org.freedesktop.DBus for NameOwnerChanged
     std::unique_ptr<sdbus::IProxy> playerProxy_;        // current player
     MprisArtLoader artLoader_;

@@ -1,6 +1,7 @@
 #pragma once
 #include <nanovg.h>
 #include <string>
+#include <unordered_map>
 
 #ifdef HAVE_LIBCURL
 #include <curl/curl.h>
@@ -15,16 +16,21 @@ public:
     MprisArtLoader& operator=(const MprisArtLoader&) = delete;
 
     void request(const std::string& url);
-    void setNvgContext(NVGcontext* vg) { vg_ = vg; }
-    int imageHandle() const { return imageHandle_; }
+    void setNvgContext(NVGcontext* vg);
+    int imageHandle(NVGcontext* vg) const;
+    int imageGeneration() const { return generation_; }
     int curlFd() const;
     int curlTimeout() const;
     void tick();
 
 private:
-    NVGcontext* vg_ = nullptr;
-    int imageHandle_ = -1;
+    // Each panel has its own NVGcontext (one Renderer per panel), so art must
+    // be decoded once per context.
+    std::unordered_map<NVGcontext*, int> images_;
     std::string currentUrl_;
+    std::string artData_;   // decoded bytes of the current art, kept so
+                            // contexts registered later can decode from it
+    int generation_ = 0;
 
 #ifdef HAVE_LIBCURL
     CURLM* multi_ = nullptr;
@@ -32,8 +38,7 @@ private:
     std::string buffer_;
 
     void cleanupEasy();
-    static size_t writeCb(char* ptr, size_t size, size_t nmemb, void* userdata);
     void finalizeTransfer();
-    bool decodeAndCreateImage();
+    void decodeAndCreateImages();
 #endif
 };

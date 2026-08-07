@@ -2,6 +2,41 @@
 #include <cstdio>
 #include <cstring>
 
+MprisArtLoader::MprisArtLoader(NVGcontext* vg) {
+#ifdef HAVE_LIBCURL
+    multi_ = curl_multi_init();
+#endif
+    if (vg) images_[vg] = -1;
+}
+
+MprisArtLoader::~MprisArtLoader() {
+#ifdef HAVE_LIBCURL
+    cleanupEasy();
+    if (multi_) curl_multi_cleanup(multi_);
+#endif
+    for (auto& [vg, handle] : images_) {
+        if (handle >= 0 && vg) nvgDeleteImage(vg, handle);
+    }
+}
+
+void MprisArtLoader::setNvgContext(NVGcontext* vg) {
+    if (!vg || images_.count(vg)) return;
+    images_[vg] = -1;
+    if (artData_.empty()) return;
+    // A context registered after the art finished downloading still gets it.
+    int handle = nvgCreateImageMem(vg, 0, (unsigned char*)artData_.data(), (int)artData_.size());
+    if (handle > 0) {
+        images_[vg] = handle;
+        ++generation_;
+    }
+}
+
+int MprisArtLoader::imageHandle(NVGcontext* vg) const {
+    if (!vg) return -1;
+    auto it = images_.find(vg);
+    return it == images_.end() ? -1 : it->second;
+}
+
 #ifdef HAVE_LIBCURL
 
 static size_t art_write_cb(char* ptr, size_t size, size_t nmemb, void* userdata) {
@@ -9,16 +44,6 @@ static size_t art_write_cb(char* ptr, size_t size, size_t nmemb, void* userdata)
     size_t total = size * nmemb;
     buf->append(ptr, total);
     return total;
-}
-
-MprisArtLoader::MprisArtLoader(NVGcontext* vg) : vg_(vg) {
-    multi_ = curl_multi_init();
-}
-
-MprisArtLoader::~MprisArtLoader() {
-    cleanupEasy();
-    if (multi_) curl_multi_cleanup(multi_);
-    if (imageHandle_ >= 0 && vg_) nvgDeleteImage(vg_, imageHandle_);
 }
 
 void MprisArtLoader::cleanupEasy() {
@@ -29,15 +54,20 @@ void MprisArtLoader::cleanupEasy() {
 }
 
 void MprisArtLoader::request(const std::string& url) {
-    if (url == currentUrl_ && imageHandle_ >= 0) return;  // cached
-    if (imageHandle_ >= 0 && vg_) {
-        nvgDeleteImage(vg_, imageHandle_);
-        imageHandle_ = -1;
+    if (url == currentUrl_ && !images_.empty()) return;  // cached or in flight
+
+    // Drop the previous art (any context) before acting on the new URL.
+    for (auto& [vg, handle] : images_) {
+        if (handle >= 0 && vg) nvgDeleteImage(vg, handle);
+        handle = -1;
     }
+    artData_.clear();
     currentUrl_ = url;
+    ++generation_;
+    // Cancel an in-flight transfer even when the new URL is empty.
+    cleanupEasy();
     if (url.empty()) return;
 
-    cleanupEasy();
     easy_ = curl_easy_init();
     if (!easy_) return;
     curl_easy_setopt(easy_, CURLOPT_URL, url.c_str());
@@ -82,7 +112,7 @@ void MprisArtLoader::finalizeTransfer() {
     while ((msg = curl_multi_info_read(multi_, &msgs_left)) != nullptr) {
         if (msg->msg == CURLMSG_DONE && msg->easy_handle == easy_) {
             if (msg->data.result == CURLE_OK) {
-                decodeAndCreateImage();
+                decodeAndCreateImages();
             } else {
                 std::fprintf(stderr, "MprisArtLoader: curl failed: %s\n",
                              curl_easy_strerror(msg->data.result));
@@ -92,25 +122,27 @@ void MprisArtLoader::finalizeTransfer() {
     cleanupEasy();
 }
 
-bool MprisArtLoader::decodeAndCreateImage() {
-    if (!vg_ || buffer_.empty()) return false;
-    // NanoVG's nvgCreateImageMem expects RGBA or JPG/PNG bytes; it decodes via stb_image.
-    int handle = nvgCreateImageMem(vg_, 0,
-                                    (unsigned char*)buffer_.data(),
-                                    (int)buffer_.size());
-    if (handle <= 0) {
-        std::fprintf(stderr, "MprisArtLoader: nvgCreateImageMem failed for %s\n",
-                     currentUrl_.c_str());
-        return false;
+void MprisArtLoader::decodeAndCreateImages() {
+    if (buffer_.empty()) return;
+    for (auto& [vg, handle] : images_) {
+        if (!vg) continue;
+        // NanoVG's nvgCreateImageMem expects RGBA or JPG/PNG bytes; it decodes via stb_image.
+        int h = nvgCreateImageMem(vg, 0,
+                                  (unsigned char*)buffer_.data(),
+                                  (int)buffer_.size());
+        if (h <= 0) {
+            std::fprintf(stderr, "MprisArtLoader: nvgCreateImageMem failed for %s\n",
+                         currentUrl_.c_str());
+            continue;
+        }
+        handle = h;
     }
-    imageHandle_ = handle;
-    return true;
+    artData_ = buffer_;
+    ++generation_;
 }
 
 #else  // !HAVE_LIBCURL
 
-MprisArtLoader::MprisArtLoader(NVGcontext* vg) : vg_(vg) {}
-MprisArtLoader::~MprisArtLoader() = default;
 void MprisArtLoader::request(const std::string&) {}
 int MprisArtLoader::curlFd() const { return -1; }
 int MprisArtLoader::curlTimeout() const { return -1; }
