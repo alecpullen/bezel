@@ -39,6 +39,8 @@ public:
     void tick();
     void requestRedraw();
 
+    NVGcontext* rendererNvg() const;
+
     wl_surface* surface() const { return surface_; }
     void handlePointerButton(int x, int y, uint32_t button);
     void handlePopupPointerButton(int x, int y, uint32_t button);

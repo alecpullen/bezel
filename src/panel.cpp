@@ -139,6 +139,10 @@ void Panel::requestRedraw() {
     dirty_ = true;
 }
 
+NVGcontext* Panel::rendererNvg() const {
+    return renderer_ ? renderer_->ctx() : nullptr;
+}
+
 void Panel::render() {
     if (!configured_) return;
     if (!renderer_) return;

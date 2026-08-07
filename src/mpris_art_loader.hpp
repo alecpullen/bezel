@@ -15,6 +15,7 @@ public:
     MprisArtLoader& operator=(const MprisArtLoader&) = delete;
 
     void request(const std::string& url);
+    void setNvgContext(NVGcontext* vg) { vg_ = vg; }
     int imageHandle() const { return imageHandle_; }
     int curlFd() const;
     int curlTimeout() const;

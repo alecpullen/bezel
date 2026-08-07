@@ -18,6 +18,7 @@
 #include "brightness_service.hpp"
 #include "audio_service.hpp"
 #include "network_service.hpp"
+#include "mpris_service.hpp"
 #include "bus_manager.hpp"
 #include "control_socket.hpp"
 #include "notification_service.hpp"
@@ -93,6 +94,7 @@ class App {
         std::unique_ptr<BrightnessService> brightnessService_;
         std::unique_ptr<AudioService>      audioService_;
         std::unique_ptr<NetworkService>    networkService_;
+        std::unique_ptr<MprisService>      mprisService_;
         std::unique_ptr<ToplevelService>  toplevelService_;
         std::unique_ptr<WorkspaceService> workspaceService_;
         std::unique_ptr<DesktopIndex>     desktopIndex_;
@@ -300,6 +302,10 @@ bool App::init() {
         if (!notificationService_->init()) {
             notificationService_.reset();
         }
+        mprisService_ = std::make_unique<MprisService>(busManager_->session(), nullptr);
+        if (!mprisService_->init()) {
+            mprisService_.reset();
+        }
     }
 
     for (auto& o : outputs_) create_panel(*o);
@@ -351,6 +357,10 @@ void App::run() {
             pollFds.push_back({audioService_->pollFd(), POLLIN, 0});
         }
 
+        if (mprisService_ && mprisService_->artFd() >= 0) {
+            pollFds.push_back({mprisService_->artFd(), POLLIN | POLLOUT, 0});
+        }
+
         if (controlSocket_) {
             pollFds.push_back({controlSocket_->fd(), POLLIN, 0});
         }
@@ -359,6 +369,11 @@ void App::run() {
         if (busManager_) {
             int busTimeout = busManager_->pollTimeout();
             if (busTimeout >= 0 && busTimeout < timeout) timeout = busTimeout;
+        }
+        if (mprisService_) {
+            int artT = mprisService_->artTimeout();
+            if (artT == 0) timeout = 0;
+            else if (artT >= 0 && artT < timeout) timeout = artT;
         }
 
         int ret = poll(pollFds.data(), pollFds.size(), timeout);
@@ -394,6 +409,9 @@ void App::run() {
         }
         if (networkService_) {
             networkService_->tick();
+        }
+        if (mprisService_) {
+            mprisService_->tick();
         }
         if (toplevelService_) {
             toplevelService_->tick();
@@ -483,6 +501,14 @@ void App::handleCommandAction(CommandAction action) {
 
 void App::tick() {
     if (!ready_) return;
+    if (mprisService_) {
+        for (auto& o : outputs_) {
+            if (o->panel && o->panel->rendererNvg()) {
+                mprisService_->setNvgContext(o->panel->rendererNvg());
+                break;
+            }
+        }
+    }
     if (notificationService_) {
         notificationService_->tick();
     }
@@ -502,6 +528,7 @@ void App::tick() {
 }
 
 void App::finish() {
+    mprisService_.reset();
     notificationOverlay_.reset();
     notificationService_.reset();
     networkService_.reset();
