@@ -92,6 +92,7 @@ class App {
         std::unique_ptr<NotificationOverlay> notificationOverlay_;
         std::unique_ptr<OsdOverlay> osdOverlay_;
         bool pointerOverOverlay_ = false;
+        bool pointerOverOsd_     = false;
         std::unique_ptr<BatteryService>   batteryService_;
         std::unique_ptr<BrightnessService> brightnessService_;
         std::unique_ptr<AudioService>      audioService_;
@@ -198,10 +199,12 @@ void App::ptr_enter(void* data, wl_pointer*, uint32_t, wl_surface* surface,
         if (self->hoveredPanel_) self->hoveredPanel_->handlePointerLeave();
         self->hoveredPanel_ = nullptr;
         self->hoveredMenuOwner_ = nullptr;
+        self->pointerOverOsd_ = true;
         // OSD is non-interactive; no further routing
         return;
     }
     self->pointerOverOverlay_ = false;
+    self->pointerOverOsd_     = false;
     self->hoveredPanel_     = nullptr;
     self->hoveredMenuOwner_ = nullptr;
     for (auto& o : self->outputs_) {
@@ -225,6 +228,7 @@ void App::ptr_leave(void* data, wl_pointer*, uint32_t, wl_surface*) {
         self->notificationOverlay_->handlePointerLeave();
     }
     self->pointerOverOverlay_ = false;
+    self->pointerOverOsd_     = false;
     if (self->hoveredPanel_) self->hoveredPanel_->handlePointerLeave();
     self->hoveredPanel_     = nullptr;
     self->hoveredMenuOwner_ = nullptr;
@@ -238,6 +242,7 @@ void App::ptr_motion(void* data, wl_pointer*, uint32_t, wl_fixed_t sx, wl_fixed_
         self->notificationOverlay_->handlePointerMotion(self->ptrX_, self->ptrY_);
         return;
     }
+    if (self->pointerOverOsd_) return;
     if (self->hoveredMenuOwner_)
         self->hoveredMenuOwner_->handlePopupPointerMotion(self->ptrX_, self->ptrY_);
     else if (self->hoveredPanel_)
@@ -251,6 +256,7 @@ void App::ptr_button(void* data, wl_pointer*, uint32_t, uint32_t, uint32_t butto
         self->notificationOverlay_->handlePointerButton(self->ptrX_, self->ptrY_, button);
         return;
     }
+    if (self->pointerOverOsd_) return;
     if (self->hoveredMenuOwner_)
         self->hoveredMenuOwner_->handlePopupPointerButton(self->ptrX_, self->ptrY_, button);
     else if (self->hoveredPanel_)
