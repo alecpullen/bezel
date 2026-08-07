@@ -23,6 +23,7 @@
 #include "control_socket.hpp"
 #include "notification_service.hpp"
 #include "notification_overlay.hpp"
+#include "osd_overlay.hpp"
 #include "desktop_index.hpp"
 #include "search_engine.hpp"
 #include "toplevel_service.hpp"
@@ -89,6 +90,7 @@ class App {
         std::unique_ptr<BusManager> busManager_;
         std::unique_ptr<NotificationService> notificationService_;
         std::unique_ptr<NotificationOverlay> notificationOverlay_;
+        std::unique_ptr<OsdOverlay> osdOverlay_;
         bool pointerOverOverlay_ = false;
         std::unique_ptr<BatteryService>   batteryService_;
         std::unique_ptr<BrightnessService> brightnessService_;
@@ -190,6 +192,13 @@ void App::ptr_enter(void* data, wl_pointer*, uint32_t, wl_surface* surface,
         self->ptrX_ = wl_fixed_to_int(sx);
         self->ptrY_ = wl_fixed_to_int(sy);
         self->notificationOverlay_->handlePointerMotion(self->ptrX_, self->ptrY_);
+        return;
+    }
+    if (self->osdOverlay_ && self->osdOverlay_->surface() == surface) {
+        if (self->hoveredPanel_) self->hoveredPanel_->handlePointerLeave();
+        self->hoveredPanel_ = nullptr;
+        self->hoveredMenuOwner_ = nullptr;
+        // OSD is non-interactive; no further routing
         return;
     }
     self->pointerOverOverlay_ = false;
@@ -319,6 +328,35 @@ bool App::init() {
             focus ? focus->wl : nullptr,
             focus ? focus->scale : 1,
             *notificationService_);
+    }
+    if ((audioService_ || brightnessService_) && compositor_ && layer_shell_ && !outputs_.empty()) {
+        Output* focus = activeOutput();
+        osdOverlay_ = std::make_unique<OsdOverlay>(
+            egl_, theme_, compositor_, layer_shell_,
+            focus ? focus->wl : nullptr,
+            focus ? focus->scale : 1);
+        if (audioService_) {
+            audioService_->subscribe([this] {
+                if (osdOverlay_ && audioService_) {
+                    OsdState st;
+                    st.kind = OsdKind::Volume;
+                    st.level = audioService_->info().volume;
+                    st.muted = audioService_->info().muted;
+                    osdOverlay_->show(st);
+                }
+            });
+        }
+        if (brightnessService_) {
+            brightnessService_->subscribe([this] {
+                if (osdOverlay_ && brightnessService_) {
+                    OsdState st;
+                    st.kind = OsdKind::Brightness;
+                    st.level = brightnessService_->info().level;
+                    st.muted = false;
+                    osdOverlay_->show(st);
+                }
+            });
+        }
     }
     wl_display_roundtrip(display_);
     ready_ = true;
@@ -522,6 +560,13 @@ void App::tick() {
         }
         notificationOverlay_->render();
     }
+    if (osdOverlay_) {
+        Output* focus = activeOutput();
+        if (focus) {
+            osdOverlay_->setOutput(focus->wl, focus->scale);
+        }
+        osdOverlay_->render();
+    }
     for (auto& o : outputs_) {
         if (o->panel) {
             o->panel->tick();
@@ -532,6 +577,7 @@ void App::tick() {
 
 void App::finish() {
     mprisService_.reset();
+    osdOverlay_.reset();
     notificationOverlay_.reset();
     notificationService_.reset();
     networkService_.reset();
