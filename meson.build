@@ -13,9 +13,19 @@ sdbus_cpp = dependency('sdbus-c++')
 freetype  = dependency('freetype2', required : false)
 harfbuzz  = dependency('harfbuzz', required : false)
 librsvg   = dependency('librsvg-2.0', required : false)
+pipewire  = dependency('libpipewire-0.3', required : false)
+libcurl   = dependency('libcurl',        required : false)
 
 if librsvg.found()
   add_project_arguments('-DHAVE_LIBRSVG', language : 'cpp')
+endif
+
+if pipewire.found()
+  add_project_arguments('-DHAVE_PIPEWIRE', language : 'cpp')
+endif
+
+if libcurl.found()
+  add_project_arguments('-DHAVE_LIBCURL', language : 'cpp')
 endif
 
 # NanoVG is vendored under vendor/nanovg.  The GLES2 backend implementation is
@@ -68,6 +78,7 @@ executable('bezel',
             'src/desktop_index.cpp', 'src/control_socket.cpp',
             'src/search_engine.cpp',
             'src/nanovg_shim.cpp', gen],
-           dependencies : [wl_client, wl_egl, egl, glesv2,
-                            freetype, harfbuzz, nanovg_dep, sdbus_cpp, librsvg],
+            dependencies : [wl_client, wl_egl, egl, glesv2,
+                             freetype, harfbuzz, nanovg_dep, sdbus_cpp, librsvg,
+                             pipewire, libcurl],
            install : true)
