@@ -8,6 +8,7 @@
 #include "volume_widget.hpp"
 #include "brightness_widget.hpp"
 #include "network_widget.hpp"
+#include "mpris_widget.hpp"
 #include "icon_loader.hpp"
 #include "toplevel_service.hpp"
 #include "window_list.hpp"
@@ -114,6 +115,11 @@ void Panel::resize(int w, int h) {
                 root_->addChild(std::move(wl));
             }
             root_->addSpacer();
+            if (mprisService_) {
+                auto mpris = std::make_unique<MprisWidget>(theme_, renderer_->ctx(), fontHandle_, *mprisService_);
+                mpris->setCallback([this] { requestRedraw(); });
+                root_->addChild(std::move(mpris));
+            }
             if (networkService_) {
                 auto net = std::make_unique<NetworkWidget>(theme_, renderer_->ctx(), fontHandle_, *networkService_);
                 net->setCallback([this] { requestRedraw(); });
