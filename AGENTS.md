@@ -100,7 +100,7 @@ generated header uses `namespace` as a parameter name).
 
 ## Current milestone status
 
-The source tree implements M1–M5:
+The source tree implements M1–M7:
 
 - **M1 Foundation** — layer surfaces, one panel per output, EGL context.
 - **M2 Render core** — NanoVG + FreeType/HarfBuzz font stack, widget/layout
@@ -113,13 +113,16 @@ The source tree implements M1–M5:
 - **M5 Launcher** — `.desktop` parser (`DesktopIndex`), Unix-domain control
   socket, fuzzy search (`SearchEngine`), keyboard-interactive launcher surface
   with app/window/command results.
+- **M6 Notifications** — `NotificationService` (org.freedesktop.Notifications
+  D-Bus server) + `NotificationOverlay` rendering stacked toasts with timeouts
+  and basic actions.
 - **M7 OSD + status polish** — `AudioService` (PipeWire) with `VolumeWidget` and volume OSD,
   `BrightnessService` (sysfs + inotify) with brightness OSD, `NetworkService`
   (NetworkManager D-Bus) with `NetworkWidget`, `MprisService` (session D-Bus + libcurl art)
   with `MprisWidget`. Shared `OsdOverlay` surface reuses the M6 notification overlay machinery.
 
-M8–M10 are not yet implemented: notifications, system tray (SNI),
-session lock/power, config/theming/animation cohesion pass.
+M8–M10 are not yet implemented: system tray (SNI), session lock/power,
+config/theming/animation cohesion pass.
 
-Note: `docs/milestone-tracker.md` is currently stale and still lists M2 as the
-next milestone.
+Note: `docs/milestone-tracker.md` tracks the current status; M8 is the next
+milestone.
