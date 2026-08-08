@@ -28,11 +28,11 @@ public:
     void activate(int x, int y);
     void contextMenu(int x, int y);
     bool consumeDirty();
-    void reloadIconFor(NVGcontext* vg);
+    void reloadIcon();
+    void destroyIcon();
 
 private:
     void readProperties();
-    void reloadIcon();
     void onNewIcon();
     void onNewStatus();
     void onNewTitle();

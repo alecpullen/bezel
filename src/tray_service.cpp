@@ -20,10 +20,15 @@ TrayService::~TrayService() {
 
 void TrayService::reloadIcons(NVGcontext* vg) {
     if (!vg || vg == vg_) return;
+    // Destroy all old handles while the loader is still bound to the old
+    // context, so nvgDeleteImage runs against the context that owns them.
+    for (auto& item : items_) {
+        item->destroyIcon();
+    }
     vg_ = vg;
     iconLoader_.setNvgContext(vg);
     for (auto& item : items_) {
-        item->reloadIconFor(vg);
+        item->reloadIcon();
     }
     dirty_ = true;
 }

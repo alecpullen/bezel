@@ -557,7 +557,10 @@ void Panel::setTrayEnabled(bool enabled) {
         trayWidget_ = nullptr;
     } else if (trayService_ && renderer_) {
         // Reload icons on this panel's context so the new TrayWidget's
-        // SniIconWidgets hold valid image handles.
+        // SniIconWidgets hold valid image handles. If enabled before the first
+        // renderer init (fontHandle_ still -1), rebuildLayout() no-ops anyway
+        // and the reload is skipped; in practice the tray is enabled only after
+        // the panel is configured.
         trayService_->reloadIcons(renderer_->ctx());
     }
     rebuildLayout();
