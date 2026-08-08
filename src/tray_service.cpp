@@ -73,11 +73,11 @@ void TrayService::registerObject() {
 
     object_->addVTable(
         sdbus::registerMethod("RegisterStatusNotifierItem")
-            .implementedAs([this](const sdbus::Variant& serviceArg) {
-                this->onRegisterItem(serviceArg);
+            .implementedAs([this](const std::string& service) {
+                this->onRegisterItem(service);
             }),
         sdbus::registerMethod("RegisterStatusNotifierHost")
-            .implementedAs([](const sdbus::Variant&) {
+            .implementedAs([](const std::string&) {
                 // No-op: bezel is the host.
             }),
         sdbus::registerProperty("IsStatusNotifierHostRegistered")
@@ -98,21 +98,7 @@ void TrayService::registerObject() {
     ).forInterface(INTERFACE);
 }
 
-void TrayService::onRegisterItem(const sdbus::Variant& serviceArg) {
-    std::string service;
-    // The spec says int32 (PID), but all modern clients send a string.
-    try {
-        service = static_cast<std::string>(serviceArg);
-    } catch (const sdbus::Error&) {
-        try {
-            int32_t pid = static_cast<int32_t>(serviceArg);
-            std::fprintf(stderr, "TrayService: RegisterStatusNotifierItem got PID %d (int form not supported)\n", pid);
-            return;
-        } catch (const sdbus::Error&) {
-            std::fprintf(stderr, "TrayService: RegisterStatusNotifierItem arg type unrecognized\n");
-            return;
-        }
-    }
+void TrayService::onRegisterItem(const std::string& service) {
     if (service.empty()) return;
     // Check if already registered
     for (const auto& item : items_)

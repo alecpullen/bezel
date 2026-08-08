@@ -24,7 +24,7 @@ public:
 
 private:
     void registerObject();
-    void onRegisterItem(const sdbus::Variant& serviceArg);
+    void onRegisterItem(const std::string& service);
     void onNameOwnerChanged(const std::string& name,
                             const std::string& oldOwner,
                             const std::string& newOwner);
