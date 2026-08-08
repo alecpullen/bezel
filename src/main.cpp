@@ -274,8 +274,18 @@ void App::ptr_button(void* data, wl_pointer*, uint32_t, uint32_t, uint32_t butto
 
 void App::reg_global_remove(void* data, wl_registry*, uint32_t name) {
     auto* self = static_cast<App*>(data);
-    for (auto it = self->outputs_.begin(); it != self->outputs_.end(); ++it)
-        if ((*it)->name_id == name) { self->outputs_.erase(it); break; }
+    for (auto it = self->outputs_.begin(); it != self->outputs_.end(); ++it) {
+        if ((*it)->name_id == name) {
+            if (self->lastTrayOutput_ == it->get())
+                self->lastTrayOutput_ = nullptr;
+            if (self->hoveredPanel_ == (*it)->panel.get())
+                self->hoveredPanel_ = nullptr;
+            if (self->hoveredMenuOwner_ == (*it)->panel.get())
+                self->hoveredMenuOwner_ = nullptr;
+            self->outputs_.erase(it);
+            break;
+        }
+    }
 }
 
 bool App::init() {
