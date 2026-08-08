@@ -239,6 +239,7 @@ void App::ptr_leave(void* data, wl_pointer*, uint32_t, wl_surface*) {
     self->pointerOverOverlay_ = false;
     self->pointerOverOsd_     = false;
     if (self->hoveredPanel_) self->hoveredPanel_->handlePointerLeave();
+    else if (self->hoveredMenuOwner_) self->hoveredMenuOwner_->handlePointerLeave();
     self->hoveredPanel_     = nullptr;
     self->hoveredMenuOwner_ = nullptr;
 }
