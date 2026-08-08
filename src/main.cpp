@@ -100,6 +100,7 @@ class App {
         std::unique_ptr<NetworkService>    networkService_;
         std::unique_ptr<MprisService>      mprisService_;
         std::unique_ptr<TrayService>       trayService_;
+        Output*                     lastTrayOutput_ = nullptr;
         std::unique_ptr<ToplevelService>  toplevelService_;
         std::unique_ptr<WorkspaceService> workspaceService_;
         std::unique_ptr<DesktopIndex>     desktopIndex_;
@@ -218,6 +219,12 @@ void App::ptr_enter(void* data, wl_pointer*, uint32_t, wl_surface* surface,
         if (o->panel->popupSurface() == surface) {
             self->hoveredMenuOwner_ = o->panel.get();
             break;
+        }
+        if (o->panel->trayTooltipSurface() == surface) {
+            self->hoveredMenuOwner_ = o->panel.get();
+            self->ptrX_ = wl_fixed_to_int(sx);
+            self->ptrY_ = wl_fixed_to_int(sy);
+            return;
         }
     }
     self->ptrX_ = wl_fixed_to_int(sx);
@@ -570,6 +577,16 @@ void App::tick() {
                 trayService_->setNvgContext(o->panel->rendererNvg());
                 break;
             }
+        }
+    }
+    if (trayService_) {
+        Output* focus = activeOutput();
+        if (focus != lastTrayOutput_) {
+            if (lastTrayOutput_ && lastTrayOutput_->panel)
+                lastTrayOutput_->panel->setTrayEnabled(false);
+            if (focus && focus->panel)
+                focus->panel->setTrayEnabled(true);
+            lastTrayOutput_ = focus;
         }
     }
     if (notificationService_) {
