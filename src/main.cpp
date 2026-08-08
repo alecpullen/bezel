@@ -22,6 +22,7 @@
 #include "bus_manager.hpp"
 #include "control_socket.hpp"
 #include "notification_service.hpp"
+#include "tray_service.hpp"
 #include "notification_overlay.hpp"
 #include "osd_overlay.hpp"
 #include "desktop_index.hpp"
@@ -98,6 +99,7 @@ class App {
         std::unique_ptr<AudioService>      audioService_;
         std::unique_ptr<NetworkService>    networkService_;
         std::unique_ptr<MprisService>      mprisService_;
+        std::unique_ptr<TrayService>       trayService_;
         std::unique_ptr<ToplevelService>  toplevelService_;
         std::unique_ptr<WorkspaceService> workspaceService_;
         std::unique_ptr<DesktopIndex>     desktopIndex_;
@@ -324,6 +326,10 @@ bool App::init() {
         if (!mprisService_->init()) {
             mprisService_.reset();
         }
+        trayService_ = std::make_unique<TrayService>(busManager_->session(), nullptr);
+        if (!trayService_->init()) {
+            trayService_.reset();
+        }
     }
 
     for (auto& o : outputs_) create_panel(*o);
@@ -460,6 +466,9 @@ void App::run() {
         if (mprisService_) {
             mprisService_->tick();
         }
+        if (trayService_) {
+            trayService_->tick();
+        }
         if (toplevelService_) {
             toplevelService_->tick();
         }
@@ -555,6 +564,14 @@ void App::tick() {
             }
         }
     }
+    if (trayService_) {
+        for (auto& o : outputs_) {
+            if (o->panel && o->panel->rendererNvg()) {
+                trayService_->setNvgContext(o->panel->rendererNvg());
+                break;
+            }
+        }
+    }
     if (notificationService_) {
         notificationService_->tick();
     }
@@ -587,6 +604,7 @@ void App::finish() {
     // Panels (and their widgets) must be destroyed before the services they
     // subscribe to, so widget destructors can unsubscribe from live services.
     outputs_.clear();
+    trayService_.reset();
     mprisService_.reset();
     networkService_.reset();
     audioService_.reset();
