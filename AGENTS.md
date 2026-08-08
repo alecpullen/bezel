@@ -31,7 +31,7 @@ App (main.cpp)
   ├── Egl (shared across all panels)
   ├── D-Bus system connection + Services (singletons, owned by App):
   │     BatteryService, ToplevelService, WorkspaceService,
-  │     NetworkService, MprisService, NotificationService   (Service base class)
+  │     NetworkService, MprisService, NotificationService, TrayService   (Service base class)
   ├── AudioService (PipeWire), BrightnessService (sysfs+inotify)
   ├── OsdOverlay + NotificationOverlay (singleton focus-following surfaces)
   ├── DesktopIndex + SearchEngine (launcher data)
@@ -100,7 +100,7 @@ generated header uses `namespace` as a parameter name).
 
 ## Current milestone status
 
-The source tree implements M1–M7:
+The source tree implements M1–M8:
 
 - **M1 Foundation** — layer surfaces, one panel per output, EGL context.
 - **M2 Render core** — NanoVG + FreeType/HarfBuzz font stack, widget/layout
@@ -120,9 +120,12 @@ The source tree implements M1–M7:
   `BrightnessService` (sysfs + inotify) with brightness OSD, `NetworkService`
   (NetworkManager D-Bus) with `NetworkWidget`, `MprisService` (session D-Bus + libcurl art)
   with `MprisWidget`. Shared `OsdOverlay` surface reuses the M6 notification overlay machinery.
+- **M8 System tray** — `TrayService` (org.kde.StatusNotifierWatcher D-Bus host),
+  `SniItem` per-client proxies, `SniIconWidget` + `TrayWidget` in the panel tray,
+  `TrayTooltip` hover popover, singleton tray teleports to the active output.
 
-M8–M10 are not yet implemented: system tray (SNI), session lock/power,
+M9–M10 are not yet implemented: session lock/power,
 config/theming/animation cohesion pass.
 
-Note: `docs/milestone-tracker.md` tracks the current status; M8 is the next
+Note: `docs/milestone-tracker.md` tracks the current status; M9 is the next
 milestone.

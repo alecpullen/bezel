@@ -18,7 +18,7 @@
 | M5 — Launcher | ✅ DONE | Medium |
 | M6 — Notifications | ✅ DONE | Medium |
 | M7 — OSD + status polish | ✅ DONE | Medium |
-| M8 — System tray | 📋 PLANNED | High |
+| M8 — System tray | ✅ DONE | High |
 | M9 — Session: idle + lock + power | 📋 PLANNED | High |
 | M10 — Cohesion pass | 📋 PLANNED | Medium |
 
@@ -839,7 +839,7 @@ All milestones assume single-threaded event loop. No `std::thread`, no async. If
 |---|----------|-----------|------------|
 | Q1 | MangoWC custom IPC format unknown | M4 | Ship flat-icons fallback first; upgrade to tiling maps when IPC is defined. Do not block M4. |
 | Q2 | Does MangoWC expose `wl_event_loop` for fd integration? | M3 | Default to manual `poll()` loop watching Wayland fd + D-Bus fd. More portable. |
-| Q3 | Does MangoWC support `xdg-systemtray-v1`? If yes, use it as primary; if not, SNI is primary and xdg-systemtray-v1 remains an experiment. | M8 |
+| Q3 | Does MangoWC support `xdg-systemtray-v1`? If yes, use it as primary; if not, SNI is primary and `xdg-systemtray-v1` remains an experiment. | M8 | `xdg-systemtray-v1` does not exist in wayland-protocols (checked v1.41 staging). SNI is the sole tray protocol for bezel. Q3 closed. |
 | Q4 | ext-session-lock-v1 negotiation — does MangoWC implement it? | M9 | Required protocol; verify compositor support early in M9. If missing, lock is non-functional until compositor adds it. |
 | Q5 | PAM configuration (`/etc/pam.d/bezel`) — what service template? | M9 | Ship an example PAM config; user or package manager installs it. Document in AGENTS.md. |
 | Q6 | Icon themes for .desktop icons — which icon loader? | M5 | Start with GTK icon theme lookup (`IconThemePath` + `IconName` from .desktop files); use `gtk-icon-theme` headers or parse `index.theme` + `hicolor` manually. |
