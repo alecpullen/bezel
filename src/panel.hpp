@@ -24,6 +24,9 @@ class AudioService;
 class BrightnessService;
 class NetworkService;
 class MprisService;
+class TrayService;
+class TrayWidget;
+class TrayTooltip;
 class WindowList;
 class Clock;
 class ContextMenuSurface;
@@ -36,7 +39,7 @@ public:
           ToplevelService* toplevelService, WorkspaceService* workspaceService,
           AudioService* audioService, BrightnessService* brightnessService,
           NetworkService* networkService, MprisService* mprisService,
-          wl_seat* seat);
+          TrayService* trayService, wl_seat* seat);
     ~Panel();
 
     void setScale(int scale);
@@ -63,8 +66,12 @@ public:
     void handleLauncherKey(uint32_t keysym);          // XKB keysym values
     bool launcherActive() const { return launcherActive_; }
 
+    void setTrayEnabled(bool enabled);
+    wl_surface* trayTooltipSurface() const;
+
 private:
     void resize(int w, int h);
+    void rebuildLayout();
     void togglePin(const std::string& app_id);
     void renderLauncher();
     void updateLauncherResults();
@@ -88,6 +95,8 @@ private:
     BrightnessService*   brightnessService_  = nullptr;
     NetworkService*      networkService_     = nullptr;
     MprisService*        mprisService_       = nullptr;
+    TrayService*         trayService_        = nullptr;
+    bool                 trayEnabled_        = false;
     wl_surface*            surface_         = nullptr;
     zwlr_layer_surface_v1* layer_surface_   = nullptr;
     wl_egl_window*         egl_window_      = nullptr;
@@ -114,6 +123,8 @@ private:
     std::unique_ptr<FontCache>          fontCache_;
     std::unique_ptr<BoxLayout>          root_;
     std::unique_ptr<ContextMenuSurface> contextMenuSurface_;
+    TrayWidget*                        trayWidget_    = nullptr;
+    std::unique_ptr<TrayTooltip>        trayTooltip_;
     std::set<std::string>               pinnedAppIds_;
 
     static constexpr int HEIGHT         = 48;

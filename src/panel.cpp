@@ -9,6 +9,8 @@
 #include "brightness_widget.hpp"
 #include "network_widget.hpp"
 #include "mpris_widget.hpp"
+#include "tray_widget.hpp"
+#include "tray_tooltip.hpp"
 #include "icon_loader.hpp"
 #include "toplevel_service.hpp"
 #include "window_list.hpp"
@@ -23,8 +25,8 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-Panel::Panel(Theme& theme, Egl& egl, wl_compositor* compositor, zwlr_layer_shell_v1* shell, wl_output* output, const char* name, BatteryService* batteryService, ToplevelService* toplevelService, WorkspaceService* workspaceService, AudioService* audioService, BrightnessService* brightnessService, NetworkService* networkService, MprisService* mprisService, wl_seat* seat)
-    : egl_(egl), theme_(theme), compositor_(compositor), layer_shell_(shell), output_(output), seat_(seat), batteryService_(batteryService), toplevelService_(toplevelService), workspaceService_(workspaceService), audioService_(audioService), brightnessService_(brightnessService), networkService_(networkService), mprisService_(mprisService) {
+Panel::Panel(Theme& theme, Egl& egl, wl_compositor* compositor, zwlr_layer_shell_v1* shell, wl_output* output, const char* name, BatteryService* batteryService, ToplevelService* toplevelService, WorkspaceService* workspaceService, AudioService* audioService, BrightnessService* brightnessService, NetworkService* networkService, MprisService* mprisService, TrayService* trayService, wl_seat* seat)
+    : egl_(egl), theme_(theme), compositor_(compositor), layer_shell_(shell), output_(output), seat_(seat), batteryService_(batteryService), toplevelService_(toplevelService), workspaceService_(workspaceService), audioService_(audioService), brightnessService_(brightnessService), networkService_(networkService), mprisService_(mprisService), trayService_(trayService) {
     surface_ = wl_compositor_create_surface(compositor);
     layer_surface_ = zwlr_layer_shell_v1_get_layer_surface(shell, surface_, output, ZWLR_LAYER_SHELL_V1_LAYER_TOP, name);
 
@@ -81,69 +83,92 @@ void Panel::resize(int w, int h) {
             fontCache_ = std::make_unique<FontCache>(renderer_->ctx());
             int fontH = fontCache_->loadSans();
             fontHandle_ = fontH >= 0 ? fontH : 0;
-
-            root_ = std::make_unique<BoxLayout>(BoxOrientation::Horizontal,
-                                                theme_.gapItem, theme_.panelPad);
-            if (workspaceService_) {
-                auto switcher = std::make_unique<WorkspaceSwitcher>(theme_, fontHandle_, output_, *workspaceService_, HEIGHT);
-                switcher->setCallback([this] { requestRedraw(); });
-                root_->addChild(std::move(switcher));
-            }
-            if (toplevelService_) {
-                auto wl = std::make_unique<WindowList>(theme_, fontHandle_,
-                                                       renderer_->ctx(), output_, *toplevelService_, HEIGHT);
-                wl->setCallback([this] { requestRedraw(); });
-                wl->setSeat(seat_);
-                wl->setContextMenuCallback([this](WindowList::ContextMenuRequest req) {
-                    contextMenuSurface_.reset();
-                    int ax = std::min(req.anchorX, width_ - ContextMenuSurface::MENU_W);
-                    bool pinned = pinnedAppIds_.count(req.app_id) > 0;
-                    contextMenuSurface_ = std::make_unique<ContextMenuSurface>(
-                        egl_, theme_, compositor_, layer_shell_, output_,
-                        ax, pinned, req.handle, req.app_id,
-                        [this, req] {
-                            if (req.handle)
-                                zwlr_foreign_toplevel_handle_v1_close(req.handle);
-                            contextMenuSurface_.reset();
-                        },
-                        [this, req] {
-                            togglePin(req.app_id);
-                            contextMenuSurface_.reset();
-                        });
-                });
-                windowList_ = wl.get();
-                root_->addChild(std::move(wl));
-            }
-            root_->addSpacer();
-            if (mprisService_) {
-                auto mpris = std::make_unique<MprisWidget>(theme_, renderer_->ctx(), fontHandle_, *mprisService_);
-                mpris->setCallback([this] { requestRedraw(); });
-                root_->addChild(std::move(mpris));
-            }
-            if (networkService_) {
-                auto net = std::make_unique<NetworkWidget>(theme_, renderer_->ctx(), fontHandle_, *networkService_);
-                net->setCallback([this] { requestRedraw(); });
-                root_->addChild(std::move(net));
-            }
-            if (audioService_) {
-                auto vol = std::make_unique<VolumeWidget>(theme_, renderer_->ctx(), fontHandle_, *audioService_);
-                vol->setCallback([this] { requestRedraw(); });
-                root_->addChild(std::move(vol));
-            }
-            if (batteryService_) {
-                auto battery = std::make_unique<BatteryWidget>(theme_, renderer_->ctx(), fontHandle_, *batteryService_);
-                battery->setCallback([this] { requestRedraw(); });
-                root_->addChild(std::move(battery));
-            }
-            auto clock = std::make_unique<Clock>(theme_, renderer_->ctx(), fontHandle_);
-            clock_ = clock.get();
-            root_->addChild(std::move(clock));
+            rebuildLayout();
         }
     } else {
         wl_egl_window_resize(egl_window_, physW, physH, 0, 0);
     }
     configured_ = true;
     dirty_ = true;
+}
+
+void Panel::rebuildLayout() {
+    if (!renderer_) return;
+    root_ = std::make_unique<BoxLayout>(BoxOrientation::Horizontal,
+                                        theme_.gapItem, theme_.panelPad);
+    if (workspaceService_) {
+        auto switcher = std::make_unique<WorkspaceSwitcher>(theme_, fontHandle_, output_, *workspaceService_, HEIGHT);
+        switcher->setCallback([this] { requestRedraw(); });
+        root_->addChild(std::move(switcher));
+    }
+    if (toplevelService_) {
+        auto wl = std::make_unique<WindowList>(theme_, fontHandle_,
+                                               renderer_->ctx(), output_, *toplevelService_, HEIGHT);
+        wl->setCallback([this] { requestRedraw(); });
+        wl->setSeat(seat_);
+        wl->setContextMenuCallback([this](WindowList::ContextMenuRequest req) {
+            contextMenuSurface_.reset();
+            int ax = std::min(req.anchorX, width_ - ContextMenuSurface::MENU_W);
+            bool pinned = pinnedAppIds_.count(req.app_id) > 0;
+            contextMenuSurface_ = std::make_unique<ContextMenuSurface>(
+                egl_, theme_, compositor_, layer_shell_, output_,
+                ax, pinned, req.handle, req.app_id,
+                [this, req] {
+                    if (req.handle)
+                        zwlr_foreign_toplevel_handle_v1_close(req.handle);
+                    contextMenuSurface_.reset();
+                },
+                [this, req] {
+                    togglePin(req.app_id);
+                    contextMenuSurface_.reset();
+                });
+        });
+        windowList_ = wl.get();
+        root_->addChild(std::move(wl));
+    }
+    root_->addSpacer();
+    if (mprisService_) {
+        auto mpris = std::make_unique<MprisWidget>(theme_, renderer_->ctx(), fontHandle_, *mprisService_);
+        mpris->setCallback([this] { requestRedraw(); });
+        root_->addChild(std::move(mpris));
+    }
+    if (networkService_) {
+        auto net = std::make_unique<NetworkWidget>(theme_, renderer_->ctx(), fontHandle_, *networkService_);
+        net->setCallback([this] { requestRedraw(); });
+        root_->addChild(std::move(net));
+    }
+    if (audioService_) {
+        auto vol = std::make_unique<VolumeWidget>(theme_, renderer_->ctx(), fontHandle_, *audioService_);
+        vol->setCallback([this] { requestRedraw(); });
+        root_->addChild(std::move(vol));
+    }
+    if (trayEnabled_ && trayService_) {
+        auto tray = std::make_unique<TrayWidget>(theme_, *trayService_, fontHandle_);
+        tray->setCallback([this] { requestRedraw(); });
+        tray->setTooltipCallbacks(
+            [this](int anchorX, const std::string& text) {
+                trayTooltip_ = std::make_unique<TrayTooltip>(
+                    egl_, theme_, compositor_, layer_shell_, output_,
+                    (int)scale_, anchorX, HEIGHT, text);
+                // Bottom-anchored panel: HEIGHT is the panel's top edge (the
+                // tooltip's bottom margin is panelTopY + tooltipH + gap), so
+                // the tooltip floats above the panel.
+            },
+            [this] { trayTooltip_.reset(); }
+        );
+        trayWidget_ = tray.get();
+        root_->addChild(std::move(tray));
+    }
+    if (batteryService_) {
+        auto battery = std::make_unique<BatteryWidget>(theme_, renderer_->ctx(), fontHandle_, *batteryService_);
+        battery->setCallback([this] { requestRedraw(); });
+        root_->addChild(std::move(battery));
+    }
+    auto clock = std::make_unique<Clock>(theme_, renderer_->ctx(), fontHandle_);
+    clock_ = clock.get();
+    root_->addChild(std::move(clock));
+
+    requestRedraw();
 }
 
 void Panel::tick() {
@@ -522,4 +547,23 @@ void Panel::handle_configure(void* data, zwlr_layer_surface_v1* s, uint32_t seri
 
 void Panel::handle_closed(void* data, zwlr_layer_surface_v1*) {
     (void)data;
+}
+
+void Panel::setTrayEnabled(bool enabled) {
+    if (trayEnabled_ == enabled) return;
+    trayEnabled_ = enabled;
+    if (!enabled) {
+        trayTooltip_.reset();
+        trayWidget_ = nullptr;
+    } else if (trayService_ && renderer_) {
+        // Reload icons on this panel's context so the new TrayWidget's
+        // SniIconWidgets hold valid image handles.
+        trayService_->reloadIcons(renderer_->ctx());
+    }
+    rebuildLayout();
+    requestRedraw();
+}
+
+wl_surface* Panel::trayTooltipSurface() const {
+    return trayTooltip_ ? trayTooltip_->surface() : nullptr;
 }

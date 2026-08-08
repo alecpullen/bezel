@@ -28,6 +28,7 @@ public:
     void activate(int x, int y);
     void contextMenu(int x, int y);
     bool consumeDirty();
+    void reloadIconFor(NVGcontext* vg);
 
 private:
     void readProperties();

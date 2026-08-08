@@ -22,6 +22,7 @@ public:
 
     void setTooltipCallbacks(std::function<void(int, const std::string&)> show,
                              std::function<void()> dismiss);
+    void setCallback(std::function<void()> requestRedraw);
 
     static constexpr int MAX_VISIBLE = 8;
 
@@ -37,4 +38,5 @@ private:
     bool childrenDirty_ = true;
     std::function<void(int, const std::string&)> showTooltip_;
     std::function<void()> dismissTooltip_;
+    std::function<void()> requestRedraw_;
 };

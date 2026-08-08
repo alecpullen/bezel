@@ -98,6 +98,15 @@ void SniItem::reloadIcon() {
 void SniItem::onNewIcon() {
     reloadIcon();
 }
+
+void SniItem::reloadIconFor(NVGcontext* vg) {
+    (void)vg;  // reloadIcon uses the loader's current context
+    if (imageHandle_ >= 0) {
+        iconLoader_.destroy(imageHandle_);
+        imageHandle_ = -1;
+    }
+    reloadIcon();
+}
 void SniItem::onNewStatus() {
     try {
         std::string s = static_cast<std::string>(proxy_->getProperty("Status")

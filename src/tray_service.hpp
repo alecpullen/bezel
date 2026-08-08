@@ -18,6 +18,7 @@ public:
     bool tick() override;
 
     void setNvgContext(NVGcontext* vg);
+    void reloadIcons(NVGcontext* vg);
 
     const std::vector<std::unique_ptr<SniItem>>& items() const { return items_; }
     SniIconLoader& iconLoader() { return iconLoader_; }

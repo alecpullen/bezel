@@ -22,6 +22,10 @@ void TrayWidget::setTooltipCallbacks(std::function<void(int, const std::string&)
         icon->setTooltipCallbacks(showTooltip_, dismissTooltip_);
 }
 
+void TrayWidget::setCallback(std::function<void()> requestRedraw) {
+    requestRedraw_ = std::move(requestRedraw);
+}
+
 void TrayWidget::rebuildChildren() {
     icons_.clear();
     const auto& items = svc_.items();
@@ -34,6 +38,7 @@ void TrayWidget::rebuildChildren() {
     }
     overflow_ = (int)items.size() > MAX_VISIBLE;
     childrenDirty_ = false;
+    if (requestRedraw_) requestRedraw_();
 }
 
 int TrayWidget::preferredWidth() const {

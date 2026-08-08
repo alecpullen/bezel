@@ -18,6 +18,16 @@ TrayService::~TrayService() {
     }
 }
 
+void TrayService::reloadIcons(NVGcontext* vg) {
+    if (!vg || vg == vg_) return;
+    vg_ = vg;
+    iconLoader_.setNvgContext(vg);
+    for (auto& item : items_) {
+        item->reloadIconFor(vg);
+    }
+    dirty_ = true;
+}
+
 void TrayService::setNvgContext(NVGcontext* vg) {
     if (vg_ == nullptr && vg != nullptr) {
         vg_ = vg;
@@ -111,6 +121,9 @@ void TrayService::onRegisterItem(const std::string& service) {
     }
     items_.push_back(std::move(item));
     dirty_ = true;
+    // Synchronously notify so observers (TrayWidget) drop stale icon refs
+    // before the next poll iteration dispatches pointer events.
+    notify();
 
     try {
         object_->emitSignal("StatusNotifierItemRegistered")
@@ -133,6 +146,9 @@ void TrayService::removeItem(const std::string& service) {
         if ((*it)->info().service == service) {
             it = items_.erase(it);
             dirty_ = true;
+            // Synchronously notify so observers (TrayWidget) rebuild before
+            // any pointer event can deref the freed SniItem this iteration.
+            notify();
             try {
                 object_->emitSignal("StatusNotifierUnregistered")
                     .onInterface(INTERFACE)
