@@ -150,9 +150,9 @@ void Panel::rebuildLayout() {
                 trayTooltip_ = std::make_unique<TrayTooltip>(
                     egl_, theme_, compositor_, layer_shell_, output_,
                     (int)scale_, anchorX, HEIGHT, text);
-                // Bottom-anchored panel: HEIGHT is the panel's top edge (the
-                // tooltip's bottom margin is panelTopY + tooltipH + gap), so
-                // the tooltip floats above the panel.
+                // Bottom-anchored panel: HEIGHT is the panel's top edge; the
+                // tooltip's bottom margin is panelTopY + gapItem, so the
+                // tooltip hugs the panel top with just the gapItem gap.
             },
             [this] { trayTooltip_.reset(); }
         );

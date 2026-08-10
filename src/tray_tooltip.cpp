@@ -45,10 +45,14 @@ void TrayTooltip::createSurface(int anchorX, int panelTopY) {
 
     zwlr_layer_surface_v1_set_anchor(layer_surface_,
         ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM | ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT);
-    // Position above the panel: bottom margin = panelTopY + tooltip height + gap.
-    // Margins are surface-local (logical) coordinates, so no scale factor is
-    // applied here; the compositor places the surface in output space.
-    int bottomMargin = panelTopY + TOOLTIP_H + (int)theme_.gapItem;
+    // Position above the panel: the panel is bottom-anchored and panelTopY is
+    // its top edge (HEIGHT=48). The tooltip's bottom margin is the distance
+    // from the bottom of the screen to the tooltip's bottom edge; to hug the
+    // panel top with just the gapItem gap, that margin is panelTopY + gapItem
+    // (48 + 8 = 56). Margins are surface-local (logical) coordinates, so no
+    // scale factor is applied here; the compositor places the surface in
+    // output space.
+    int bottomMargin = panelTopY + (int)theme_.gapItem;
     int leftMargin = anchorX;
     zwlr_layer_surface_v1_set_size(layer_surface_, width_, TOOLTIP_H);
     zwlr_layer_surface_v1_set_margin(layer_surface_, 0, 0, bottomMargin, leftMargin);

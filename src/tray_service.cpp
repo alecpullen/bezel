@@ -60,6 +60,7 @@ bool TrayService::init() {
     }
     try {
         conn_->requestName(sdbus::ServiceName{SERVICE_NAME});
+        std::fprintf(stderr, "TrayService: acquired %s\n", SERVICE_NAME);
         registerObject();
 
         // Watch NameOwnerChanged to detect vanishing clients.

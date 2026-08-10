@@ -1,4 +1,5 @@
 #include "sni_item.hpp"
+#include <chrono>
 #include <cstdio>
 
 SniItem::SniItem(sdbus::IConnection* conn, SniIconLoader& iconLoader, const std::string& service)
@@ -16,6 +17,13 @@ bool SniItem::init() {
         try {
             proxy_ = sdbus::createProxy(*conn_, sdbus::ServiceName{service_},
                                          sdbus::ObjectPath{path});
+            // Bound the synchronous D-Bus call timeout so a hung-but-alive
+            // client cannot freeze the single-threaded panel for the default
+            // 25s. sdbus-c++ 2.2.1 exposes this only on the connection
+            // (IConnection::setMethodCallTimeout, IConnection.h:205), not per
+            // proxy/call; the session bus is shared, so this bounds every
+            // synchronous call made on it (tray, MPRIS, notifications).
+            conn_->setMethodCallTimeout(std::chrono::milliseconds(1000));
             // Verify the proxy is reachable by reading Id (spec type 's').
             info_.id = static_cast<std::string>(proxy_->getProperty("Id")
                 .onInterface("org.kde.StatusNotifierItem"));

@@ -35,7 +35,9 @@ private:
     NVGcontext* vg_ = nullptr;
     std::unique_ptr<sdbus::IObject> object_;
     std::unique_ptr<sdbus::IProxy> dbusProxy_;
-    std::vector<std::unique_ptr<SniItem>> items_;
+    // iconLoader_ must be declared before items_: reverse destruction then
+    // runs ~SniItem (which calls iconLoader_.destroy) before ~SniIconLoader.
     SniIconLoader iconLoader_;
+    std::vector<std::unique_ptr<SniItem>> items_;
     bool dirty_ = false;
 };
