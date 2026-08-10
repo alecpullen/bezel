@@ -26,5 +26,6 @@ public:
     void destroy(int handle);
 
 private:
+    int rasterizeSvg(const std::string& path) const;
     NVGcontext* vg_;
 };

@@ -602,7 +602,7 @@ M1 (Foundation) ──── DONE
   - Renders at 20×20px (tweakable via design tokens `icon.inline`)
   - Renders tooltip on hover (text label with `text.muted`, 11px, positioned above the icon)
   - Click-to-activate: call `ContextMenu(x, y)` on the item (if `ItemIsMenu` is false) or trigger the D-Bus menu (deferred)
-- [ ] Layout: `SniIconWidget` instances are placed in the tray area segment of the panel, left of the battery/network/volume glyphs
+- [ ] Layout: `SniIconWidget` instances are placed in the tray area segment of the panel, right of the network/volume glyphs and left of the battery glyph
 
 #### 8.4 Singleton tray with focus teleport
 
@@ -628,7 +628,7 @@ Per design spec §3.4:
 - Icons update when apps replace their pixmap
 - Tooltips render on hover
 - Tray teleports between outputs when focus changes
-- Status glyphs (battery, network, volume) render to the left of SNI icons
+- Status glyphs (battery) render to the right of SNI icons, and network/volume render to their left
 
 ---
 

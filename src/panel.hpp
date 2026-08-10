@@ -123,7 +123,6 @@ private:
     std::unique_ptr<FontCache>          fontCache_;
     std::unique_ptr<BoxLayout>          root_;
     std::unique_ptr<ContextMenuSurface> contextMenuSurface_;
-    TrayWidget*                        trayWidget_    = nullptr;
     std::unique_ptr<TrayTooltip>        trayTooltip_;
     std::set<std::string>               pinnedAppIds_;
 

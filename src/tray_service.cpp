@@ -86,12 +86,11 @@ bool TrayService::init() {
 
         return true;
     } catch (const sdbus::Error& e) {
-        // The name was already acquired; release it so a later re-init (or the
-        // dtor) does not leave our claimed name dangling. Keep conn_ set so the
-        // destructor's releaseName path still runs.
+        // The name was already acquired; leave conn_ set so the destructor's
+        // guarded releaseName() reclaims it. init() must not release here, or
+        // the name would be released twice.
         std::fprintf(stderr, "TrayService: failed to register %s: %s\n",
                      SERVICE_NAME, e.what());
-        try { conn_->releaseName(sdbus::ServiceName{SERVICE_NAME}); } catch (...) {}
         return false;
     }
 }

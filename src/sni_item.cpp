@@ -104,6 +104,12 @@ void SniItem::reloadIcon() {
 }
 
 void SniItem::onNewIcon() {
+    // A name-only client changes its icon via NewIcon; re-read IconName so
+    // reloadIcon() does not keep using the stale cached value.
+    try {
+        info_.iconName = static_cast<std::string>(proxy_->getProperty("IconName")
+            .onInterface("org.kde.StatusNotifierItem"));
+    } catch (const sdbus::Error&) {}
     reloadIcon();
 }
 

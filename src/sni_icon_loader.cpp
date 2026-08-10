@@ -19,6 +19,53 @@ void SniIconLoader::destroy(int handle) {
     if (handle >= 0 && vg_) nvgDeleteImage(vg_, handle);
 }
 
+int SniIconLoader::rasterizeSvg(const std::string& path) const {
+#ifdef HAVE_LIBRSVG
+    static constexpr int SIZE = 64;
+    GError* err = nullptr;
+    RsvgHandle* handle = rsvg_handle_new_from_file(path.c_str(), &err);
+    if (!handle) {
+        if (err) g_error_free(err);
+        return -1;
+    }
+    cairo_surface_t* surf = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, SIZE, SIZE);
+    cairo_t* cr = cairo_create(surf);
+    RsvgRectangle vp = { 0.0, 0.0, (double)SIZE, (double)SIZE };
+    rsvg_handle_render_document(handle, cr, &vp, &err);
+    if (err) { g_error_free(err); err = nullptr; }
+    cairo_destroy(cr);
+    g_object_unref(handle);
+    cairo_surface_flush(surf);
+    const unsigned char* src = cairo_image_surface_get_data(surf);
+    int stride = cairo_image_surface_get_stride(surf);
+    // Cairo ARGB32 (premultiplied, little-endian bytes: B G R A) → NanoVG RGBA straight alpha
+    std::vector<unsigned char> rgba(SIZE * SIZE * 4);
+    for (int y = 0; y < SIZE; y++) {
+        const unsigned char* row = src + y * stride;
+        for (int x = 0; x < SIZE; x++) {
+            unsigned char b = row[x * 4 + 0];
+            unsigned char g = row[x * 4 + 1];
+            unsigned char r = row[x * 4 + 2];
+            unsigned char a = row[x * 4 + 3];
+            if (a > 0) {
+                r = (unsigned char)(std::min(255, (int)r * 255 / a));
+                g = (unsigned char)(std::min(255, (int)g * 255 / a));
+                b = (unsigned char)(std::min(255, (int)b * 255 / a));
+            }
+            rgba[(y * SIZE + x) * 4 + 0] = r;
+            rgba[(y * SIZE + x) * 4 + 1] = g;
+            rgba[(y * SIZE + x) * 4 + 2] = b;
+            rgba[(y * SIZE + x) * 4 + 3] = a;
+        }
+    }
+    cairo_surface_destroy(surf);
+    return nvgCreateImageRGBA(vg_, SIZE, SIZE, 0, rgba.data());
+#else
+    (void)path;
+    return -1;
+#endif
+}
+
 int SniIconLoader::fromPixmap(const std::vector<std::tuple<int32_t, int32_t, std::vector<uint8_t>>>& pixmaps) {
     if (!vg_ || pixmaps.empty()) return -1;
 
@@ -114,7 +161,11 @@ int SniIconLoader::fromIconName(const std::string& name, const std::string& them
 
     // Absolute path
     if (name[0] == '/') {
-        if (fexists(name)) return nvgCreateImage(vg_, name.c_str(), 0);
+        if (fexists(name)) {
+            if (name.size() >= 4 && name.compare(name.size() - 4, 4, ".svg") == 0)
+                return rasterizeSvg(name);   // nvgCreateImage cannot decode SVG
+            return nvgCreateImage(vg_, name.c_str(), 0);
+        }
         std::string png = name + ".png";
         if (fexists(png)) return nvgCreateImage(vg_, png.c_str(), 0);
         return -1;
@@ -126,46 +177,8 @@ int SniIconLoader::fromIconName(const std::string& name, const std::string& them
         if (path.size() >= 4 && path.compare(path.size() - 4, 4, ".svg") == 0) {
             // SVG: rasterize inline with librsvg (mirrors IconLoader::rasterizeSvg).
             // We fall through to the hicolor path if librsvg is absent.
-#ifdef HAVE_LIBRSVG
-            static constexpr int SIZE = 64;
-            GError* err = nullptr;
-            RsvgHandle* handle = rsvg_handle_new_from_file(path.c_str(), &err);
-            if (handle) {
-                cairo_surface_t* surf = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, SIZE, SIZE);
-                cairo_t* cr = cairo_create(surf);
-                RsvgRectangle vp = { 0.0, 0.0, (double)SIZE, (double)SIZE };
-                rsvg_handle_render_document(handle, cr, &vp, &err);
-                if (err) { g_error_free(err); err = nullptr; }
-                cairo_destroy(cr);
-                g_object_unref(handle);
-                cairo_surface_flush(surf);
-                const unsigned char* src = cairo_image_surface_get_data(surf);
-                int stride = cairo_image_surface_get_stride(surf);
-                // Cairo ARGB32 (premultiplied, little-endian bytes: B G R A) → NanoVG RGBA straight alpha
-                std::vector<unsigned char> rgba(SIZE * SIZE * 4);
-                for (int y = 0; y < SIZE; y++) {
-                    const unsigned char* row = src + y * stride;
-                    for (int x = 0; x < SIZE; x++) {
-                        unsigned char b = row[x * 4 + 0];
-                        unsigned char g = row[x * 4 + 1];
-                        unsigned char r = row[x * 4 + 2];
-                        unsigned char a = row[x * 4 + 3];
-                        if (a > 0) {
-                            r = (unsigned char)(std::min(255, (int)r * 255 / a));
-                            g = (unsigned char)(std::min(255, (int)g * 255 / a));
-                            b = (unsigned char)(std::min(255, (int)b * 255 / a));
-                        }
-                        rgba[(y * SIZE + x) * 4 + 0] = r;
-                        rgba[(y * SIZE + x) * 4 + 1] = g;
-                        rgba[(y * SIZE + x) * 4 + 2] = b;
-                        rgba[(y * SIZE + x) * 4 + 3] = a;
-                    }
-                }
-                cairo_surface_destroy(surf);
-                return nvgCreateImageRGBA(vg_, SIZE, SIZE, 0, rgba.data());
-            }
-            if (err) g_error_free(err);
-#endif
+            int h = rasterizeSvg(path);
+            if (h >= 0) return h;
         } else {
             return nvgCreateImage(vg_, path.c_str(), 0);
         }
@@ -192,46 +205,8 @@ int SniIconLoader::fromIconName(const std::string& name, const std::string& them
     for (const auto& base : bases) {
         std::string p = base + "scalable/apps/" + name + ".svg";
         if (fexists(p)) {
-#ifdef HAVE_LIBRSVG
-            static constexpr int SIZE = 64;
-            GError* err = nullptr;
-            RsvgHandle* handle = rsvg_handle_new_from_file(p.c_str(), &err);
-            if (handle) {
-                cairo_surface_t* surf = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, SIZE, SIZE);
-                cairo_t* cr = cairo_create(surf);
-                RsvgRectangle vp = { 0.0, 0.0, (double)SIZE, (double)SIZE };
-                rsvg_handle_render_document(handle, cr, &vp, &err);
-                if (err) { g_error_free(err); err = nullptr; }
-                cairo_destroy(cr);
-                g_object_unref(handle);
-                cairo_surface_flush(surf);
-                const unsigned char* src = cairo_image_surface_get_data(surf);
-                int stride = cairo_image_surface_get_stride(surf);
-                // Cairo ARGB32 (premultiplied, little-endian bytes: B G R A) → NanoVG RGBA straight alpha
-                std::vector<unsigned char> rgba(SIZE * SIZE * 4);
-                for (int y = 0; y < SIZE; y++) {
-                    const unsigned char* row = src + y * stride;
-                    for (int x = 0; x < SIZE; x++) {
-                        unsigned char b = row[x * 4 + 0];
-                        unsigned char g = row[x * 4 + 1];
-                        unsigned char r = row[x * 4 + 2];
-                        unsigned char a = row[x * 4 + 3];
-                        if (a > 0) {
-                            r = (unsigned char)(std::min(255, (int)r * 255 / a));
-                            g = (unsigned char)(std::min(255, (int)g * 255 / a));
-                            b = (unsigned char)(std::min(255, (int)b * 255 / a));
-                        }
-                        rgba[(y * SIZE + x) * 4 + 0] = r;
-                        rgba[(y * SIZE + x) * 4 + 1] = g;
-                        rgba[(y * SIZE + x) * 4 + 2] = b;
-                        rgba[(y * SIZE + x) * 4 + 3] = a;
-                    }
-                }
-                cairo_surface_destroy(surf);
-                return nvgCreateImageRGBA(vg_, SIZE, SIZE, 0, rgba.data());
-            }
-            if (err) g_error_free(err);
-#endif
+            int h = rasterizeSvg(p);
+            if (h >= 0) return h;
         }
     }
 

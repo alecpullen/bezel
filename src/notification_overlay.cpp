@@ -142,6 +142,9 @@ void NotificationOverlay::createSurface() {
 }
 
 void NotificationOverlay::destroySurface() {
+    // Destroy the iconLoader_ first: its destructor calls nvgDeleteImage on the
+    // NVGcontext. Releasing it after renderer_->destroy() would be a use-after-free.
+    iconLoader_.reset();
     if (renderer_) renderer_->destroy();
     if (egl_surface_ != EGL_NO_SURFACE) eglDestroySurface(egl_.display(), egl_surface_);
     if (egl_window_)                    wl_egl_window_destroy(egl_window_);
@@ -149,7 +152,6 @@ void NotificationOverlay::destroySurface() {
     if (surface_)                       wl_surface_destroy(surface_);
     renderer_.reset();
     fontCache_.reset();
-    iconLoader_.reset();
     surface_       = nullptr;
     layer_surface_ = nullptr;
     egl_window_    = nullptr;

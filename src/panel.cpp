@@ -156,7 +156,6 @@ void Panel::rebuildLayout() {
             },
             [this] { trayTooltip_.reset(); }
         );
-        trayWidget_ = tray.get();
         root_->addChild(std::move(tray));
     }
     if (batteryService_) {
@@ -554,7 +553,6 @@ void Panel::setTrayEnabled(bool enabled) {
     trayEnabled_ = enabled;
     if (!enabled) {
         trayTooltip_.reset();
-        trayWidget_ = nullptr;
     } else if (trayService_ && renderer_) {
         // Reload icons on this panel's context so the new TrayWidget's
         // SniIconWidgets hold valid image handles. If enabled before the first
