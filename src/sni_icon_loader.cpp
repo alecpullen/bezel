@@ -22,12 +22,20 @@ void SniIconLoader::destroy(int handle) {
 int SniIconLoader::fromPixmap(const std::vector<std::tuple<int32_t, int32_t, std::vector<uint8_t>>>& pixmaps) {
     if (!vg_ || pixmaps.empty()) return -1;
 
+    // A D-Bus peer can push an arbitrarily large IconPixmap; clamp so a hostile
+    // or buggy client cannot force a huge allocation + linear scan in the poll
+    // loop. Reject any entry whose width or height exceeds MAX_ICON_DIM.
+    static constexpr int MAX_ICON_DIM = 512;
+
     // Pick the entry closest to 20x20: smallest with width >= 20, else largest.
+    // Oversized entries are skipped in favour of a valid smaller candidate.
     int bestIdx = -1;
     int bestW = 0;
     for (int i = 0; i < (int)pixmaps.size(); ++i) {
         int w = std::get<0>(pixmaps[i]);
-        if (w <= 0) continue;
+        int h = std::get<1>(pixmaps[i]);
+        if (w <= 0 || h <= 0) continue;
+        if (w > MAX_ICON_DIM || h > MAX_ICON_DIM) continue;
         if (bestIdx < 0) { bestIdx = i; bestW = w; continue; }
         if (bestW < 20 && w > bestW) { bestIdx = i; bestW = w; }
         else if (bestW >= 20 && w >= 20 && w < bestW) { bestIdx = i; bestW = w; }

@@ -58,9 +58,18 @@ bool TrayService::init() {
         std::fprintf(stderr, "TrayService: no session bus connection\n");
         return false;
     }
+    // Acquire the well-known name. If this fails, the connection itself is not
+    // usable for the tray; null it so the dtor skips releaseName.
     try {
         conn_->requestName(sdbus::ServiceName{SERVICE_NAME});
         std::fprintf(stderr, "TrayService: acquired %s\n", SERVICE_NAME);
+    } catch (const sdbus::Error& e) {
+        std::fprintf(stderr, "TrayService: failed to request %s: %s\n",
+                     SERVICE_NAME, e.what());
+        conn_ = nullptr;
+        return false;
+    }
+    try {
         registerObject();
 
         // Watch NameOwnerChanged to detect vanishing clients.
@@ -77,9 +86,12 @@ bool TrayService::init() {
 
         return true;
     } catch (const sdbus::Error& e) {
+        // The name was already acquired; release it so a later re-init (or the
+        // dtor) does not leave our claimed name dangling. Keep conn_ set so the
+        // destructor's releaseName path still runs.
         std::fprintf(stderr, "TrayService: failed to register %s: %s\n",
                      SERVICE_NAME, e.what());
-        conn_ = nullptr;
+        try { conn_->releaseName(sdbus::ServiceName{SERVICE_NAME}); } catch (...) {}
         return false;
     }
 }

@@ -9,6 +9,26 @@ static constexpr int PANEL_HEIGHT = 48;
 static constexpr int TOOLTIP_H = 28;
 static constexpr int MAX_TOOLTIP_W = 240;
 
+// Ellipsize text to fit maxW at the given font/size so a long title cannot
+// overflow the fixed-width tooltip card. Mirrors NotificationOverlay::truncateText.
+static std::string truncateText(NVGcontext* vg, int font, float size,
+                                const std::string& text, float maxW) {
+    if (font < 0 || !vg) return text;
+    nvgFontFaceId(vg, font);
+    nvgFontSize(vg, size);
+    float bounds[4];
+    nvgTextBounds(vg, 0, 0, text.c_str(), nullptr, bounds);
+    if (bounds[2] - bounds[0] <= maxW) return text;
+    std::string out = text;
+    while (!out.empty()) {
+        out.pop_back();
+        std::string t = out + "...";
+        nvgTextBounds(vg, 0, 0, t.c_str(), nullptr, bounds);
+        if (bounds[2] - bounds[0] <= maxW) return t;
+    }
+    return "...";
+}
+
 TrayTooltip::TrayTooltip(Egl& egl, Theme& theme, wl_compositor* compositor,
                          zwlr_layer_shell_v1* shell, wl_output* output,
                          int scale, int anchorX, int panelTopY, const std::string& text)
@@ -69,14 +89,24 @@ void TrayTooltip::render() {
     NVGcontext* vg = renderer_->ctx();
     int fontH = fontCache_ ? fontCache_->loadSans() : -1;
     float textW = 0.0f;
+    float bounds[4];
     if (fontH >= 0 && vg) {
         nvgFontFaceId(vg, fontH);
         nvgFontSize(vg, theme_.labelPrimaryPx);
-        float bounds[4];
         nvgTextBounds(vg, 0, 0, text_.c_str(), nullptr, bounds);
         textW = bounds[2] - bounds[0];
     }
-    int newWidth = (int)textW + (int)theme_.panelPad * 2;
+    // Truncate the text to the widest card, so measurement and drawing agree on
+    // the same ellipsized string and a long title cannot overflow the card.
+    int maxTextW = MAX_TOOLTIP_W - (int)theme_.panelPad * 2;
+    if (maxTextW < 1) maxTextW = 1;
+    std::string shown = truncateText(vg, fontH, theme_.labelPrimaryPx, text_, (float)maxTextW);
+    float shownW = textW;
+    if (shown != text_) {
+        nvgTextBounds(vg, 0, 0, shown.c_str(), nullptr, bounds);
+        shownW = bounds[2] - bounds[0];
+    }
+    int newWidth = (int)shownW + (int)theme_.panelPad * 2;
     if (newWidth > MAX_TOOLTIP_W) newWidth = MAX_TOOLTIP_W;
     if (newWidth < 40) newWidth = 40;
     if (newWidth != width_) {
@@ -106,7 +136,7 @@ void TrayTooltip::render() {
         nvgFontSize(vg, theme_.labelPrimaryPx);
         nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
         nvgFillColor(vg, theme_.textPrimary);
-        nvgText(vg, (float)theme_.panelPad, (float)TOOLTIP_H / 2, text_.c_str(), nullptr);
+        nvgText(vg, (float)theme_.panelPad, (float)TOOLTIP_H / 2, shown.c_str(), nullptr);
     }
 
     renderer_->endFrame();
@@ -131,6 +161,14 @@ void TrayTooltip::handle_configure(void* data, zwlr_layer_surface_v1* s,
         if (!self->renderer_->init(self->egl_surface_)) {
             std::fprintf(stderr, "TrayTooltip: renderer init failed\n");
             self->renderer_.reset();
+            if (self->egl_surface_ != EGL_NO_SURFACE) {
+                eglDestroySurface(self->egl_.display(), self->egl_surface_);
+                self->egl_surface_ = EGL_NO_SURFACE;
+            }
+            if (self->egl_window_) {
+                wl_egl_window_destroy(self->egl_window_);
+                self->egl_window_ = nullptr;
+            }
             return;
         }
         self->renderer_->setPixelRatio((float)self->scale_);

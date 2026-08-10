@@ -75,16 +75,23 @@ void SniIconWidget::render(const Renderer& renderer) const {
     }
 }
 
-bool SniIconWidget::handleClick(int /*x*/, int /*y*/, uint32_t button) {
+bool SniIconWidget::handleClick(int x, int y, uint32_t button) {
+    // SNI Activate/ContextMenu expect global screen coordinates for popup
+    // placement. bezel does not track wl_output geometry (logical height), so
+    // exact global coords are unavailable. The panel is full-width and
+    // bottom-anchored, so the passed panel-local x equals the global x; y is a
+    // panel-local (0..HEIGHT) value and should be offset by (outputHeight -
+    // HEIGHT) for a true global y, which is left as a documented approximation
+    // pending output-geometry tracking.
     if (button == BTN_LEFT) {
         if (item_.info().itemIsMenu) {
-            item_.contextMenu(x_, y_);
+            item_.contextMenu(x, y);
         } else {
-            item_.activate(x_, y_);
+            item_.activate(x, y);
         }
         return true;
     } else if (button == BTN_RIGHT) {
-        item_.contextMenu(x_, y_);
+        item_.contextMenu(x, y);
         return true;
     }
     return false;
