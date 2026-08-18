@@ -15,6 +15,19 @@ bool LockService::tick() {
         notify();
         return true;
     }
+    // Watchdog: if a PAM attempt hangs (unresponsive module) and never becomes
+    // readable, cancel it so the session is not permanently locked out.
+    if (authWatchdogArmed_ && state_ == State::Authenticating &&
+        std::chrono::steady_clock::now() - authStartedAt_ >=
+            std::chrono::milliseconds(authTimeoutMs_)) {
+        authWatchdogArmed_ = false;
+        pamAuth_.cancel();
+        statusMessage_ = "Authentication timed out";
+        startCooldown();
+        transition((mode_ == LockMode::Hard) ? State::Locked : State::SoftLocked);
+        notify();
+        return true;
+    }
     return false;
 }
 
@@ -59,11 +72,14 @@ void LockService::submitPassword(const std::string& pw) {
         notify();
         return;
     }
+    authWatchdogArmed_ = true;
+    authStartedAt_ = std::chrono::steady_clock::now();
     transition(State::Authenticating);
 }
 
 void LockService::pollPam() {
     if (state_ != State::Authenticating) return;
+    authWatchdogArmed_ = false;
     finishAuth(pamAuth_.pollResult());
 }
 

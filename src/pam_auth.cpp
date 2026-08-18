@@ -57,8 +57,19 @@ int convFn(int num_msg, const struct pam_message** msg,
 
 } // namespace
 
+namespace {
+// Cap the password length we will transmit. The child reads into a fixed
+// buffer; a longer password would be silently truncated and lock the user out
+// via the cooldown. Reject oversize inputs rather than truncate.
+constexpr size_t kMaxPasswordLen = 500;
+}
+
 bool PamAuth::authenticateAsync(const std::string& user, const std::string& password) {
     cancel(); // never leave a stale child/pipe around
+    if (password.size() > kMaxPasswordLen) {
+        fprintf(stderr, "PamAuth: password too long (%zu bytes); refusing\n", password.size());
+        return false;
+    }
 
     int toChild[2] = {-1, -1};   // parent writes -> child reads
     int toParent[2] = {-1, -1};  // child writes -> parent reads

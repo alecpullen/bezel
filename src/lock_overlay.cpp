@@ -249,7 +249,10 @@ void LockOverlay::lock_configure(void* data, ext_session_lock_surface_v1* s,
     }
 
     self->configured_ = true;
-    wl_surface_commit(self->surface_);  // required: commit after first ack
+    // Do NOT commit a null buffer here — that is a protocol error for
+    // session-lock surfaces. The first real frame (attached via EGL swap in
+    // render()) is what commits the surface; App::tick() calls render() each
+    // loop while the lock is up.
 }
 
 void LockOverlay::handle_closed(void* data, zwlr_layer_surface_v1*) {

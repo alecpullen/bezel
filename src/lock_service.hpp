@@ -32,6 +32,7 @@ public:
     bool locked() const { return state_ == State::Locked || state_ == State::SoftLocked; }
     bool authenticating() const { return state_ == State::Authenticating; }
     LockMode mode() const { return mode_; }
+    void setAuthTimeoutMs(unsigned long ms) { authTimeoutMs_ = ms; }
 
     int failedAttempts() const { return failedAttempts_; }
     std::string statusMessage() const { return statusMessage_; }
@@ -52,8 +53,11 @@ private:
     State   state_     = State::Unlocked;
     LockMode mode_      = LockMode::Hard;
     int     failedAttempts_ = 0;
+    unsigned long authTimeoutMs_ = 5000;
     std::chrono::steady_clock::time_point cooldownUntil_{};
+    std::chrono::steady_clock::time_point authStartedAt_{};
     bool    cooldownActive_ = false;
+    bool    authWatchdogArmed_ = false;
     std::string statusMessage_;
     std::function<void()> stateCb_;
 };

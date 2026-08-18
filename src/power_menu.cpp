@@ -205,7 +205,7 @@ void PowerMenu::handle_configure(void* data, zwlr_layer_surface_v1* s,
     zwlr_layer_surface_v1_ack_configure(s, serial);
 
     self->width_  = w > 0 ? (int)w : self->MENU_W;
-    self->height_ = h > 0 ? (int)h : self->MENU_W;
+    self->height_ = h > 0 ? (int)h : (int)self->actions_.size() * ITEM_H + PAD * 2;
     int physW = self->width_ * self->scale_;
     int physH = self->height_ * self->scale_;
 

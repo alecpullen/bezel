@@ -1,3 +1,4 @@
+#include <csignal>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -131,6 +132,7 @@ class App {
         ext_session_lock_v1*              sessionLock_       = nullptr;
         bool                              hardLockRequested_ = false;
         bool                              hardLockConfirmed_ = false;
+        bool                              hardLockCancelled_ = false;  // user unlocked an unconfirmed hard lock
         bool                              capsLockState_     = false;
         bool                              pointerOverPowerMenu_ = false;
         std::string                       lockPassword_;
@@ -683,6 +685,12 @@ void App::session_lock_locked(void* data, ext_session_lock_v1*) {
 void App::session_lock_finished(void* data, ext_session_lock_v1* s) {
     auto* self = static_cast<App*>(data);
     if (self->sessionLock_ == s) self->sessionLock_ = nullptr;
+    // If the user cancelled this in-flight (unconfirmed) lock, a late finished
+    // event must not re-lock the session.
+    if (self->hardLockCancelled_) {
+        self->hardLockCancelled_ = false;
+        return;
+    }
     // If the compositor denied the hard lock before confirming, fall back to
     // the soft-lock path.
     if (self->lockService_ && self->lockService_->mode() == LockMode::Hard &&
@@ -703,6 +711,7 @@ void App::doLock() {
 
     if (sessionLockMgr_ && !sessionLock_ && !hardLockRequested_) {
         // Hard lock path.
+        hardLockCancelled_ = false;
         sessionLock_ = ext_session_lock_manager_v1_lock(sessionLockMgr_);
         static const ext_session_lock_v1_listener listener = {
             .locked   = session_lock_locked,
@@ -758,6 +767,12 @@ void App::doUnlock() {
     if (hardLockConfirmed_ && sessionLock_) {
         ext_session_lock_v1_unlock_and_destroy(sessionLock_);
         sessionLock_ = nullptr;
+    } else if (hardLockRequested_ && !hardLockConfirmed_) {
+        // Unconfirmed in-flight hard lock: mark it cancelled so a late
+        // finished event doesn't re-lock. It will be destroyed via destroy().
+        hardLockCancelled_ = true;
+        if (sessionLock_) ext_session_lock_v1_destroy(sessionLock_);
+        sessionLock_ = nullptr;
     }
     hardLockRequested_ = false;
     hardLockConfirmed_ = false;
@@ -772,6 +787,10 @@ void App::onLockStateChanged() {
         // Session unlocked (PAM success or unlock request).
         if (hardLockConfirmed_ && sessionLock_) {
             ext_session_lock_v1_unlock_and_destroy(sessionLock_);
+            sessionLock_ = nullptr;
+        } else if (hardLockRequested_ && !hardLockConfirmed_) {
+            hardLockCancelled_ = true;
+            if (sessionLock_) ext_session_lock_v1_destroy(sessionLock_);
             sessionLock_ = nullptr;
         }
         hardLockRequested_ = false;
@@ -998,7 +1017,10 @@ void App::tick() {
         if (focus) powerMenu_->setOutput(focus->wl, focus->scale);
         powerMenu_->render();
     }
-    if (lockService_ && (lockService_->locked() || lockService_->authenticating())) {
+    if (!lockOverlays_.empty()) {
+        // Render during Locking/Locked/SoftLocked/Authenticating so the lock
+        // surface presents a real frame (required for the compositor to fire
+        // the ext-session-lock locked event and for hard-lock surfaces).
         LockViewState view;
         buildLockView(view);
         for (auto& ov : lockOverlays_) ov->render(view);
@@ -1044,6 +1066,9 @@ void App::finish() {
 }
 
 int main() {
+    // Writing to a pipe whose reader has closed (e.g. the forked PAM helper
+    // exited before reading) would otherwise kill the panel with SIGPIPE.
+    signal(SIGPIPE, SIG_IGN);
     App app;
     if (!app.init()) return 1;
     app.run();

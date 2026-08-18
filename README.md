@@ -67,6 +67,12 @@ layer-shell soft lock. Install a PAM service file, e.g. `/etc/pam.d/bezel`:
 @include common-auth
 ```
 
+> **Trust model:** the control socket is owned by the same user that runs bezel.
+> A same-user process can always send `unlock` to dismiss a **soft** lock without
+> a password. The **hard** (ext-session-lock) path is authoritative and cannot be
+> bypassed this way. Treat the soft lock as a screen blank, not a security
+> boundary.
+
 ## Docs
 
 - [`docs/BEZEL_DESIGN_SPEC.md`](docs/BEZEL_DESIGN_SPEC.md) — UI/UX design spec and token reference
