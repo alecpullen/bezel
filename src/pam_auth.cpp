@@ -115,6 +115,8 @@ bool PamAuth::authenticateAsync(const std::string& user, const std::string& pass
             result = (rc == PAM_SUCCESS) ? 'S' : 'F';
             pam_end(pamh, rc);
         }
+        // Scrub the password from the child's stack buffer before exiting.
+        explicit_bzero(buf, sizeof(buf));
 
         (void)!write(toParent[1], &result, 1);
         close(toParent[1]);

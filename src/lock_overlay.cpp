@@ -93,6 +93,10 @@ void LockOverlay::createRenderer() {
 
 void LockOverlay::render(const LockViewState& view) {
     if (!visible_ || !configured_ || !renderer_ || fontHandle_ < 0) return;
+    // nvgBeginFrame with a zero extent is a documented NanoVG crash case; a
+    // compositor may legally send a 0x0 configure (e.g. while arranging an
+    // output). Skip the frame until a real size arrives.
+    if (width_ <= 0 || height_ <= 0) return;
 
     renderer_->beginFrame(width_, height_);
     renderer_->clear();

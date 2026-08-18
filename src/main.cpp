@@ -148,6 +148,7 @@ class App {
         void onLockStateChanged();
         void lockOnKey(const KeyEvent& ev);
         void buildLockView(LockViewState& view);
+        void clearPassword();
         void showPowerMenu();
         void handlePowerAction(PowerAction action);
         static void session_lock_locked(void* data, ext_session_lock_v1* s);
@@ -162,6 +163,22 @@ void App::create_panel(Output& o) {
         audioService_.get(), brightnessService_.get(), networkService_.get(), mprisService_.get(),
         trayService_.get(), seat_);
     o.panel->setScale(o.scale);
+    // If the session is already locked, cover the newly hot-plugged output with
+    // a lock surface too, so a multi-monitor setup never shows a live desktop
+    // on an uncovered output.
+    if (lockService_ && lockService_->locked()) {
+        auto ov = std::make_unique<LockOverlay>(
+            egl_, theme_, compositor_, layer_shell_, o.wl, o.scale);
+        bool shown = false;
+        if (sessionLock_ && hardLockConfirmed_)
+            shown = ov->showHard(sessionLock_);
+        else
+            shown = ov->showSoft();
+        if (shown) {
+            ov->setOnKey([this](const KeyEvent& e) { lockOnKey(e); });
+            lockOverlays_.push_back(std::move(ov));
+        }
+    }
 }
 
 void App::reg_global(void* data, wl_registry* r, uint32_t name, const char* iface, uint32_t version) {
@@ -698,6 +715,26 @@ void App::session_lock_finished(void* data, ext_session_lock_v1* s) {
         self->hardLockRequested_ = false;
         self->destroyLockSurfaces();
         self->doLock();
+        return;
+    }
+    // Post-confirmation finished: the compositor ended a confirmed lock
+    // (timeout, denial, etc.). Tear down lock state so we don't keep reporting
+    // locked with orphaned lock surfaces.
+    if (self->lockService_ && self->lockService_->locked()) {
+        self->hardLockRequested_ = false;
+        self->hardLockConfirmed_ = false;
+        self->destroyLockSurfaces();
+        self->lockService_->unlock();
+        self->keyFocusTarget_ = nullptr;
+    }
+}
+
+void App::clearPassword() {
+    // Zero the password bytes before releasing the string so plaintext does
+    // not linger in freed heap capacity.
+    if (!lockPassword_.empty()) {
+        explicit_bzero(lockPassword_.data(), lockPassword_.size());
+        lockPassword_.clear();
     }
 }
 
@@ -705,10 +742,11 @@ void App::doLock() {
     if (!lockService_ || lockService_->locked() || lockService_->authenticating()) return;
     if (outputs_.empty() || !compositor_) return;
 
-    lockPassword_.clear();
+    clearPassword();
     destroyLockSurfaces();
     lockOverlays_.clear();
 
+    bool hardOk = false;
     if (sessionLockMgr_ && !sessionLock_ && !hardLockRequested_) {
         // Hard lock path.
         hardLockCancelled_ = false;
@@ -721,11 +759,25 @@ void App::doLock() {
         hardLockRequested_ = true;
         hardLockConfirmed_ = false;
         createHardLockSurfaces();
-        lockService_->beginLock(LockMode::Hard);
+        if (!lockOverlays_.empty()) {
+            hardOk = true;
+            lockService_->beginLock(LockMode::Hard);
+        } else {
+            // No lock surface could be created (e.g. another client already
+            // holds the session lock). Tear down the hard lock and fall back
+            // to the soft-lock path so the session is still covered.
+            hardLockRequested_ = false;
+            hardLockCancelled_ = true;
+            if (sessionLock_) ext_session_lock_v1_destroy(sessionLock_);
+            sessionLock_ = nullptr;
+        }
     } else if (sessionLock_ && hardLockConfirmed_) {
         // Hard lock already confirmed (e.g. re-entered on idle); keep it.
+        hardOk = true;
         lockService_->beginLock(LockMode::Hard);
-    } else {
+    }
+
+    if (!hardOk) {
         // Soft lock path.
         for (auto& o : outputs_) {
             auto ov = std::make_unique<LockOverlay>(
@@ -763,7 +815,7 @@ void App::destroyLockSurfaces() {
 
 void App::doUnlock() {
     if (!lockService_) return;
-    lockPassword_.clear();
+    clearPassword();
     if (hardLockConfirmed_ && sessionLock_) {
         ext_session_lock_v1_unlock_and_destroy(sessionLock_);
         sessionLock_ = nullptr;
@@ -807,13 +859,13 @@ void App::lockOnKey(const KeyEvent& ev) {
 
     switch (ev.keysym) {
         case XKB_KEY_Escape:
-            lockPassword_.clear();
+            clearPassword();
             break;
         case XKB_KEY_Return:
         case XKB_KEY_KP_Enter:
             if (!lockPassword_.empty() && !lockService_->authenticating())
                 lockService_->submitPassword(lockPassword_);
-            lockPassword_.clear();
+            clearPassword();
             break;
         case XKB_KEY_BackSpace:
             if (!lockPassword_.empty())
@@ -852,10 +904,17 @@ void App::buildLockView(LockViewState& view) {
 }
 
 void App::handleSocketCommand(std::string_view cmd) {
-    // Security: while soft-locked, refuse everything except the unlock path.
+    // Security: while locked, refuse everything except the unlock path.
     if (lockService_ && lockService_->locked() && cmd != "unlock") {
         fprintf(stderr, "control socket: ignored '%.*s' while locked\n",
                 (int)cmd.size(), cmd.data());
+        return;
+    }
+    // Security: refuse to cancel an in-flight (unconfirmed) hard lock via the
+    // socket. A same-uid process could otherwise race the lock and destroy it
+    // before the compositor confirms it, leaving the desktop accessible.
+    if (cmd == "unlock" && hardLockRequested_ && !hardLockConfirmed_) {
+        fprintf(stderr, "control socket: refused 'unlock' while hard lock is engaging\n");
         return;
     }
     if (cmd == "toggle_launcher") {
