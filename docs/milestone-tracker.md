@@ -19,7 +19,7 @@
 | M6 — Notifications | ✅ DONE | Medium |
 | M7 — OSD + status polish | ✅ DONE | Medium |
 | M8 — System tray | ✅ DONE | High |
-| M9 — Session: idle + lock + power | 📋 PLANNED | High |
+| M9 — Session: idle + lock + power | ✅ DONE | High |
 | M10 — Cohesion pass | 📋 PLANNED | Medium |
 
 > **Note:** The status table above is current, but the detailed milestone
@@ -632,7 +632,7 @@ Per design spec §3.4:
 
 ---
 
-## M9 — Session: idle + lock + power 📋 PLANNED
+## M9 — Session: idle + lock + power ✅ DONE
 
 **Goal:** Idle detection, a secure session lock with PAM, and a power menu backed by logind. This makes bezel a full session shell — not just a panel.
 
@@ -641,6 +641,19 @@ Per design spec §3.4:
 **Design spec references:**
 - §7 — Open questions mention session utilities (log-out, suspend)
 - Lock design is not in the design spec yet; this milestone defines it
+
+**Implemented:**
+- **Keyboard input pipeline** (`keyboard_input.{hpp,cpp}`): xkbcommon keymap/state → keysym + UTF-8 + modifier/caps state, routed through a `keyFocusTarget_` the active interactive surface (lock / power menu) claims.
+- **IdleService** (`idle_service.{hpp,cpp}`): `ext-idle-notify-v1` notifiers, idle/resume events, and an idle inhibitor (`inhibit` socket command).
+- **LockService + PamAuth + LockOverlay** (`lock_service.*`, `pam_auth.*`, `lock_overlay.*`): hard lock via `ext-session-lock-v1`, soft-lock layer-shell fallback; forked PAM helper over pipes (password never in argv/env); failed-attempt counter with escalating cooldown; caps-lock warning.
+- **LogindService + PowerMenu + PowerButtonWidget** (`logind_service.*`, `power_menu.*`, `power_button_widget.*`): logind power actions + `Can*` gating, keyboard-navigable power menu overlay, panel power button.
+- **Config seed** (`config.{hpp,cpp}`): minimal `[session]` TOML reader (idle timeouts, lock-on-idle, inhibit, lock colours/opacity, lock_user).
+- **Launcher + socket hooks**: `Reboot`/`Shut Down`/`Hibernate` command entries route to logind; `lock`/`power`/`inhibit` socket commands; while soft-locked, all socket commands except `unlock` are refused.
+- **Soft-lock security**: while soft-locked, bezel refuses to open launcher / power menu and ignores non-unlock control-socket commands.
+
+**Known limitations / follow-ups:**
+- Soft lock is best-effort (documented): it hides content via a layer-shell overlay but a malicious compositor could bypass it. Hard lock (`ext-session-lock-v1`) is authoritative when the compositor advertises it.
+- PAM service file (`/etc/pam.d/bezel`) must be installed by the user/distro.
 
 ### TODOs
 
@@ -840,8 +853,8 @@ All milestones assume single-threaded event loop. No `std::thread`, no async. If
 | Q1 | MangoWC custom IPC format unknown | M4 | Ship flat-icons fallback first; upgrade to tiling maps when IPC is defined. Do not block M4. |
 | Q2 | Does MangoWC expose `wl_event_loop` for fd integration? | M3 | Default to manual `poll()` loop watching Wayland fd + D-Bus fd. More portable. |
 | Q3 | Does MangoWC support `xdg-systemtray-v1`? If yes, use it as primary; if not, SNI is primary and `xdg-systemtray-v1` remains an experiment. | M8 | `xdg-systemtray-v1` does not exist in wayland-protocols (checked v1.41 staging). SNI is the sole tray protocol for bezel. Q3 closed. |
-| Q4 | ext-session-lock-v1 negotiation — does MangoWC implement it? | M9 | Required protocol; verify compositor support early in M9. If missing, lock is non-functional until compositor adds it. |
-| Q5 | PAM configuration (`/etc/pam.d/bezel`) — what service template? | M9 | Ship an example PAM config; user or package manager installs it. Document in AGENTS.md. |
+| Q4 | ext-session-lock-v1 negotiation — does MangoWC implement it? | M9 | Bezel probes the global at runtime and falls back to a layer-shell soft lock when absent. Verified in M9. |
+| Q5 | PAM configuration (`/etc/pam.d/bezel`) — what service template? | M9 | bezel uses service name `bezel` and forks a short-lived PAM helper. User/distro installs `/etc/pam.d/bezel` (documented in README). |
 | Q6 | Icon themes for .desktop icons — which icon loader? | M5 | Start with GTK icon theme lookup (`IconThemePath` + `IconName` from .desktop files); use `gtk-icon-theme` headers or parse `index.theme` + `hicolor` manually. |
 | Q7 | HiDPI fractional scaling — how to handle non-integer scales? | M2, M10 | EGL surface is sized at integer pixels; `wl_output::scale` tells us the factor. Apply `nvgGlobalScale()` and size widgets in logical pixels. NanoVG handles sub-pixel text. |
 

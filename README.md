@@ -9,6 +9,9 @@ A single-process Wayland shell panel written in C++20. Designed for the **MangoW
 - Window list with app icons and active-window highlight
 - Battery status, clock
 - On-demand launcher
+- Session lock (ext-session-lock hard lock with PAM auth, layer-shell soft-lock fallback)
+- Idle detection + idle-triggered lock + idle inhibitor
+- Power menu (logind: suspend / hibernate / reboot / shut down / log out)
 - Unix domain socket for external control (`$XDG_RUNTIME_DIR/bezel.sock`)
 - Nocturne theme (Tokyo Night-derived design tokens)
 
@@ -17,8 +20,11 @@ A single-process Wayland shell panel written in C++20. Designed for the **MangoW
 - Wayland compositor with `zwlr_layer_shell_v1` — tested against **MangoWC**
 - `wayland-client`, `wayland-egl`, `EGL`, `GLESv2`
 - `sdbus-c++` (D-Bus / UPower)
+- `xkbcommon` (keyboard input / keysym mapping)
+- `libpam` (`libpam0g-dev` / `libpam-dev`) — PAM authentication for the lock screen
 - `freetype2`, `harfbuzz`
 - `librsvg-2.0` (optional, for SVG icons)
+- `wayland-protocols` ≥ 1.32 for the `ext-session-lock-v1` and `ext-idle-notify-v1` protocols
 - `meson` + `ninja`
 
 ## Build
@@ -42,6 +48,23 @@ Send commands to a running instance:
 
 ```bash
 echo "toggle_launcher" | nc -U $XDG_RUNTIME_DIR/bezel.sock
+echo "lock"               | nc -U $XDG_RUNTIME_DIR/bezel.sock   # lock the session
+echo "power"              | nc -U $XDG_RUNTIME_DIR/bezel.sock   # open the power menu
+echo "inhibit 1"          | nc -U $XDG_RUNTIME_DIR/bezel.sock   # inhibit idle (0 to re-enable, bare "inhibit" toggles)
+```
+
+While the session is soft-locked, all socket commands except `unlock` are ignored.
+
+## Lock screen
+
+The lock screen authenticates via PAM using the service name `bezel`. The
+default user is the invoking user (override with `lock_user` in config). To
+authenticate on the hard lock path, the compositor must advertise
+`ext-session-lock-v1`; otherwise bezel falls back to a best-effort
+layer-shell soft lock. Install a PAM service file, e.g. `/etc/pam.d/bezel`:
+
+```
+@include common-auth
 ```
 
 ## Docs
