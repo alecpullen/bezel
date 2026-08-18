@@ -2,6 +2,8 @@
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
+#include <pwd.h>
+#include <unistd.h>
 #include <string>
 #include <vector>
 
@@ -46,6 +48,17 @@ bool parseColor(std::string_view s, uint32_t& out) {
 }
 
 } // namespace
+
+std::string SessionConfig::systemUser() const {
+    if (!lock_user.empty()) return lock_user;
+    const char* env = std::getenv("LOGNAME");
+    if (env && *env) return env;
+    env = std::getenv("USER");
+    if (env && *env) return env;
+    struct passwd* pw = getpwuid(geteuid());
+    if (pw && pw->pw_name) return pw->pw_name;
+    return {};
+}
 
 SessionConfig loadSessionConfig() {
     SessionConfig cfg;
@@ -105,6 +118,13 @@ SessionConfig loadSessionConfig() {
         } else if (key == "lock_accent") {
             uint32_t c;
             if (parseColor(val, c)) cfg.lock_accent = c;
+        } else if (key == "lock_user") {
+            // Strip surrounding quotes.
+            if (val.size() >= 2 && (val.front() == '"' || val.front() == '\''))
+                val = val.substr(1);
+            if (!val.empty() && (val.back() == '"' || val.back() == '\''))
+                val.pop_back();
+            cfg.lock_user = val;
         }
         // Unknown keys in [session] are ignored.
     }

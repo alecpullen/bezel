@@ -1,12 +1,15 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <ctime>
 #include <exception>
 #include <memory>
+#include <string>
 #include <sys/types.h>
 #include <vector>
 #include <poll.h>
 #include <linux/input-event-codes.h>
+#include <xkbcommon/xkbcommon-keysyms.h>
 #include <wayland-client-protocol.h>
 #include "egl.hpp"
 #include "panel.hpp"
@@ -32,6 +35,9 @@
 #include "config.hpp"
 #include "keyboard_input.hpp"
 #include "idle_service.hpp"
+#include "pam_auth.hpp"
+#include "lock_service.hpp"
+#include "lock_overlay.hpp"
 
 struct Output {
     wl_output* wl       = nullptr;
@@ -115,11 +121,28 @@ class App {
         std::unique_ptr<KeyboardInput>    keyboardInput_;
         std::function<void(const KeyEvent&)> keyFocusTarget_;
         std::unique_ptr<IdleService>      idleService_;
+        std::unique_ptr<PamAuth>          pamAuth_;
+        std::unique_ptr<LockService>      lockService_;
+        std::vector<std::unique_ptr<LockOverlay>> lockOverlays_;
+        ext_session_lock_v1*              sessionLock_       = nullptr;
+        bool                              hardLockRequested_ = false;
+        bool                              hardLockConfirmed_ = false;
+        bool                              capsLockState_     = false;
+        std::string                       lockPassword_;
 
         void handleSocketCommand(std::string_view cmd);
         void handleCommandAction(CommandAction action);
         Panel* activeLauncherTarget();
         Output* activeOutput();
+        void doLock();
+        void doUnlock();
+        void createHardLockSurfaces();
+        void destroyLockSurfaces();
+        void onLockStateChanged();
+        void lockOnKey(const KeyEvent& ev);
+        void buildLockView(LockViewState& view);
+        static void session_lock_locked(void* data, ext_session_lock_v1* s);
+        static void session_lock_finished(void* data, ext_session_lock_v1* s);
         void tick();
 };
 
@@ -344,14 +367,17 @@ bool App::init() {
             idleService_->subscribe([this] {
                 if (!idleService_ || idleService_->state() != IdleState::Idle) return;
                 if (sessionConfig_.lock_on_idle && !idleService_->inhibited()) {
-                    // LockService lands in Task 4; wire lockService_->lock() there.
-                    fprintf(stderr, "bezel: idle -> would lock\n");
+                    fprintf(stderr, "bezel: idle -> locking\n");
+                    doLock();
                 }
             });
         } else {
             idleService_.reset();
         }
     }
+    pamAuth_ = std::make_unique<PamAuth>();
+    lockService_ = std::make_unique<LockService>(*pamAuth_, sessionConfig_);
+    lockService_->setStateCallback([this] { onLockStateChanged(); });
     if (!egl_.init(display_)) return false;
 
     desktopIndex_ = std::make_unique<DesktopIndex>();
@@ -478,6 +504,12 @@ void App::run() {
             pollFds.push_back({mprisService_->artFd(), POLLIN | POLLOUT, 0});
         }
 
+        int pamFdIdx = -1;
+        if (lockService_ && lockService_->resultFd() >= 0) {
+            pamFdIdx = (int)pollFds.size();
+            pollFds.push_back({lockService_->resultFd(), POLLIN, 0});
+        }
+
         if (controlSocket_) {
             pollFds.push_back({controlSocket_->fd(), POLLIN, 0});
         }
@@ -507,6 +539,10 @@ void App::run() {
 
         if (busManager_)
             busManager_->processPending();
+
+        if (pamFdIdx >= 0 && (pollFds[pamFdIdx].revents & (POLLIN | POLLHUP | POLLERR))) {
+            if (lockService_) lockService_->pollPam();
+        }
 
         if (controlSocket_ && (pollFds.back().revents & POLLIN))
             controlSocket_->dispatch([this](std::string_view cmd){ handleSocketCommand(cmd); });
@@ -541,6 +577,9 @@ void App::run() {
         }
         if (idleService_) {
             idleService_->tick();
+        }
+        if (lockService_) {
+            lockService_->tick();
         }
         
         tick();
@@ -585,7 +624,171 @@ Output* App::activeOutput() {
     return nullptr;
 }
 
+void App::session_lock_locked(void* data, ext_session_lock_v1*) {
+    auto* self = static_cast<App*>(data);
+    self->hardLockConfirmed_ = true;
+    if (self->lockService_) self->lockService_->onHardLocked();
+}
+
+void App::session_lock_finished(void* data, ext_session_lock_v1* s) {
+    auto* self = static_cast<App*>(data);
+    if (self->sessionLock_ == s) self->sessionLock_ = nullptr;
+    // If the compositor denied the hard lock before confirming, fall back to
+    // the soft-lock path.
+    if (self->lockService_ && self->lockService_->mode() == LockMode::Hard &&
+        !self->lockService_->locked() && !self->hardLockConfirmed_) {
+        self->hardLockRequested_ = false;
+        self->destroyLockSurfaces();
+        self->doLock();
+    }
+}
+
+void App::doLock() {
+    if (!lockService_ || lockService_->locked() || lockService_->authenticating()) return;
+    if (outputs_.empty() || !compositor_) return;
+
+    lockPassword_.clear();
+    destroyLockSurfaces();
+    lockOverlays_.clear();
+
+    if (sessionLockMgr_ && !sessionLock_ && !hardLockRequested_) {
+        // Hard lock path.
+        sessionLock_ = ext_session_lock_manager_v1_lock(sessionLockMgr_);
+        static const ext_session_lock_v1_listener listener = {
+            .locked   = session_lock_locked,
+            .finished = session_lock_finished,
+        };
+        ext_session_lock_v1_add_listener(sessionLock_, &listener, this);
+        hardLockRequested_ = true;
+        hardLockConfirmed_ = false;
+        createHardLockSurfaces();
+        lockService_->beginLock(LockMode::Hard);
+    } else if (sessionLock_ && hardLockConfirmed_) {
+        // Hard lock already confirmed (e.g. re-entered on idle); keep it.
+        lockService_->beginLock(LockMode::Hard);
+    } else {
+        // Soft lock path.
+        for (auto& o : outputs_) {
+            auto ov = std::make_unique<LockOverlay>(
+                egl_, theme_, compositor_, layer_shell_, o->wl, o->scale);
+            if (ov->showSoft()) {
+                ov->setOnKey([this](const KeyEvent& e) { lockOnKey(e); });
+                lockOverlays_.push_back(std::move(ov));
+            }
+        }
+        if (lockOverlays_.empty()) return;
+        lockService_->beginLock(LockMode::Soft);
+    }
+
+    // Route keyboard to the lock overlay.
+    keyFocusTarget_ = [this](const KeyEvent& e) { lockOnKey(e); };
+    lockService_->setStateCallback([this] { onLockStateChanged(); });
+}
+
+void App::createHardLockSurfaces() {
+    if (!sessionLock_) return;
+    for (auto& o : outputs_) {
+        auto ov = std::make_unique<LockOverlay>(
+            egl_, theme_, compositor_, layer_shell_, o->wl, o->scale);
+        if (ov->showHard(sessionLock_)) {
+            ov->setOnKey([this](const KeyEvent& e) { lockOnKey(e); });
+            lockOverlays_.push_back(std::move(ov));
+        }
+    }
+}
+
+void App::destroyLockSurfaces() {
+    for (auto& ov : lockOverlays_) ov->hide();
+    lockOverlays_.clear();
+}
+
+void App::doUnlock() {
+    if (!lockService_) return;
+    lockPassword_.clear();
+    if (hardLockConfirmed_ && sessionLock_) {
+        ext_session_lock_v1_unlock_and_destroy(sessionLock_);
+        sessionLock_ = nullptr;
+    }
+    hardLockRequested_ = false;
+    hardLockConfirmed_ = false;
+    destroyLockSurfaces();
+    lockService_->unlock();
+    keyFocusTarget_ = nullptr;
+}
+
+void App::onLockStateChanged() {
+    if (!lockService_) return;
+    if (!lockService_->locked() && !lockService_->authenticating()) {
+        // Session unlocked (PAM success or unlock request).
+        if (hardLockConfirmed_ && sessionLock_) {
+            ext_session_lock_v1_unlock_and_destroy(sessionLock_);
+            sessionLock_ = nullptr;
+        }
+        hardLockRequested_ = false;
+        hardLockConfirmed_ = false;
+        destroyLockSurfaces();
+        keyFocusTarget_ = nullptr;
+    }
+}
+
+void App::lockOnKey(const KeyEvent& ev) {
+    if (!lockService_ || (!lockService_->locked() && !lockService_->authenticating())) return;
+    if (ev.pressed) capsLockState_ = ev.caps_lock;
+    if (!ev.pressed) return;
+
+    switch (ev.keysym) {
+        case XKB_KEY_Escape:
+            lockPassword_.clear();
+            break;
+        case XKB_KEY_Return:
+        case XKB_KEY_KP_Enter:
+            if (!lockPassword_.empty() && !lockService_->authenticating())
+                lockService_->submitPassword(lockPassword_);
+            lockPassword_.clear();
+            break;
+        case XKB_KEY_BackSpace:
+            if (!lockPassword_.empty())
+                lockPassword_.pop_back();
+            break;
+        default:
+            if (ev.text[0] != '\0')
+                lockPassword_ += ev.text;
+            break;
+    }
+}
+
+void App::buildLockView(LockViewState& view) {
+    if (!lockService_) return;
+    time_t t = time(nullptr);
+    struct tm lt;
+    localtime_r(&t, &lt);
+    char buf[64];
+    strftime(buf, sizeof(buf), "%H:%M", &lt);
+    view.timeText = buf;
+    strftime(buf, sizeof(buf), "%a %d %b", &lt);
+    view.dateText = buf;
+
+    if (batteryService_)
+        view.batteryText = std::to_string(batteryService_->info().percentage) + "%";
+    if (mprisService_ && mprisService_->info().status != MprisInfo::Status::Stopped) {
+        const auto& mi = mprisService_->info();
+        view.mediaText = mi.title;
+        if (!mi.artist.empty()) view.mediaText += " - " + mi.artist;
+    }
+    view.passwordLen = (int)lockPassword_.size();
+    view.capsLock = capsLockState_;
+    view.failedAttempts = lockService_->failedAttempts();
+    view.statusMessage = lockService_->statusMessage();
+    view.authenticating = lockService_->authenticating();
+}
+
 void App::handleSocketCommand(std::string_view cmd) {
+    // Security: while soft-locked, refuse everything except the unlock path.
+    if (lockService_ && lockService_->locked() && cmd != "unlock") {
+        fprintf(stderr, "control socket: ignored '%.*s' while locked\n",
+                (int)cmd.size(), cmd.data());
+        return;
+    }
     if (cmd == "toggle_launcher") {
         // If any panel is already in launcher mode, dismiss it
         for (auto& o : outputs_) {
@@ -599,6 +802,10 @@ void App::handleSocketCommand(std::string_view cmd) {
         if (target && searchEngine_)
             target->activateLauncher(*searchEngine_,
                 [this](CommandAction a) { handleCommandAction(a); });
+    } else if (cmd == "lock") {
+        doLock();
+    } else if (cmd == "unlock") {
+        doUnlock();
     } else if (cmd == "inhibit" || cmd.rfind("inhibit ", 0) == 0) {
         // parse "0" | "1" | "toggle"; default toggle
         if (!idleService_) {
@@ -680,6 +887,11 @@ void App::tick() {
         }
         osdOverlay_->render();
     }
+    if (lockService_ && (lockService_->locked() || lockService_->authenticating())) {
+        LockViewState view;
+        buildLockView(view);
+        for (auto& ov : lockOverlays_) ov->render(view);
+    }
     for (auto& o : outputs_) {
         if (o->panel) {
             o->panel->tick();
@@ -703,6 +915,9 @@ void App::finish() {
     idleService_.reset();
     toplevelService_.reset();
     workspaceService_.reset();
+    destroyLockSurfaces();
+    lockService_.reset();
+    pamAuth_.reset();
     if (keyboardInput_) keyboardInput_.reset();
     if (pointer_) { wl_pointer_release(pointer_); pointer_ = nullptr; }
     if (seat_)    { wl_seat_destroy(seat_); seat_ = nullptr; }
