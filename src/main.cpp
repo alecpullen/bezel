@@ -31,6 +31,7 @@
 #include "workspace_service.hpp"
 #include "config.hpp"
 #include "keyboard_input.hpp"
+#include "idle_service.hpp"
 
 struct Output {
     wl_output* wl       = nullptr;
@@ -113,6 +114,7 @@ class App {
         std::unique_ptr<ControlSocket>    controlSocket_;
         std::unique_ptr<KeyboardInput>    keyboardInput_;
         std::function<void(const KeyEvent&)> keyFocusTarget_;
+        std::unique_ptr<IdleService>      idleService_;
 
         void handleSocketCommand(std::string_view cmd);
         void handleCommandAction(CommandAction action);
@@ -336,6 +338,20 @@ bool App::init() {
     }
     fprintf(stderr, "bezel: lock path = %s\n",
             sessionLockMgr_ ? "hard (ext-session-lock-v1)" : "soft (layer-shell fallback)");
+    if (idleNotifier_ && seat_) {
+        idleService_ = std::make_unique<IdleService>();
+        if (idleService_->init(idleNotifier_, seat_, sessionConfig_)) {
+            idleService_->subscribe([this] {
+                if (!idleService_ || idleService_->state() != IdleState::Idle) return;
+                if (sessionConfig_.lock_on_idle && !idleService_->inhibited()) {
+                    // LockService lands in Task 4; wire lockService_->lock() there.
+                    fprintf(stderr, "bezel: idle -> would lock\n");
+                }
+            });
+        } else {
+            idleService_.reset();
+        }
+    }
     if (!egl_.init(display_)) return false;
 
     desktopIndex_ = std::make_unique<DesktopIndex>();
@@ -523,6 +539,9 @@ void App::run() {
         if (workspaceService_) {
             workspaceService_->tick();
         }
+        if (idleService_) {
+            idleService_->tick();
+        }
         
         tick();
     }
@@ -580,6 +599,20 @@ void App::handleSocketCommand(std::string_view cmd) {
         if (target && searchEngine_)
             target->activateLauncher(*searchEngine_,
                 [this](CommandAction a) { handleCommandAction(a); });
+    } else if (cmd == "inhibit" || cmd.rfind("inhibit ", 0) == 0) {
+        // parse "0" | "1" | "toggle"; default toggle
+        if (!idleService_) {
+            fprintf(stderr, "control socket: idle service unavailable\n");
+            return;
+        }
+        std::string arg(cmd.substr(cmd.find(' ') == std::string_view::npos
+                                       ? cmd.size() : cmd.find(' ') + 1));
+        bool inhibit;
+        if (arg == "1") inhibit = true;
+        else if (arg == "0") inhibit = false;
+        else inhibit = !idleService_->inhibited(); // toggle / bare "inhibit"
+        idleService_->setInhibited(inhibit);
+        fprintf(stderr, "control socket: idle %s\n", inhibit ? "inhibited" : "uninhibited");
     } else {
         fprintf(stderr, "control socket: unknown command '%.*s'\n",
                 (int)cmd.size(), cmd.data());
@@ -667,6 +700,7 @@ void App::finish() {
     networkService_.reset();
     audioService_.reset();
     brightnessService_.reset();
+    idleService_.reset();
     toplevelService_.reset();
     workspaceService_.reset();
     if (keyboardInput_) keyboardInput_.reset();
