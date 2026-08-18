@@ -9,3 +9,5 @@
 #undef namespace
 #include "wlr-foreign-toplevel-management-unstable-v1-client-protocol.h"
 #include "dwl-ipc-unstable-v2-client-protocol.h"
+#include "ext-session-lock-v1-client-protocol.h"
+#include "ext-idle-notify-v1-client-protocol.h"

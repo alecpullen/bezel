@@ -29,6 +29,8 @@
 #include "search_engine.hpp"
 #include "toplevel_service.hpp"
 #include "workspace_service.hpp"
+#include "config.hpp"
+#include "keyboard_input.hpp"
 
 struct Output {
     wl_output* wl       = nullptr;
@@ -77,6 +79,9 @@ class App {
         zwlr_layer_shell_v1* layer_shell_  = nullptr;
         zwlr_foreign_toplevel_manager_v1* toplevel_manager_ = nullptr;
         zdwl_ipc_manager_v2* dwl_ipc_manager_ = nullptr;
+        ext_session_lock_manager_v1* sessionLockMgr_ = nullptr;
+        ext_idle_notifier_v1* idleNotifier_ = nullptr;
+        SessionConfig         sessionConfig_ = loadSessionConfig();
         wl_seat*             seat_             = nullptr;
         wl_pointer*          pointer_          = nullptr;
         Panel*               hoveredPanel_     = nullptr;
@@ -106,6 +111,8 @@ class App {
         std::unique_ptr<DesktopIndex>     desktopIndex_;
         std::unique_ptr<SearchEngine>     searchEngine_;
         std::unique_ptr<ControlSocket>    controlSocket_;
+        std::unique_ptr<KeyboardInput>    keyboardInput_;
+        std::function<void(const KeyEvent&)> keyFocusTarget_;
 
         void handleSocketCommand(std::string_view cmd);
         void handleCommandAction(CommandAction action);
@@ -139,6 +146,14 @@ void App::reg_global(void* data, wl_registry* r, uint32_t name, const char* ifac
         self->workspaceService_->init();
         for (auto& o : self->outputs_)
             self->workspaceService_->add_output(o->wl);
+    } else if (strcmp(iface, ext_session_lock_manager_v1_interface.name) == 0) {
+        self->sessionLockMgr_ = (ext_session_lock_manager_v1*)wl_registry_bind(
+            r, name, &ext_session_lock_manager_v1_interface, 1);
+        fprintf(stderr, "bezel: ext-session-lock-v1 available (hard lock)\n");
+    } else if (strcmp(iface, ext_idle_notifier_v1_interface.name) == 0) {
+        self->idleNotifier_ = (ext_idle_notifier_v1*)wl_registry_bind(
+            r, name, &ext_idle_notifier_v1_interface, 1);
+        fprintf(stderr, "bezel: ext-idle-notify-v1 available\n");
     } else if (strcmp(iface, wl_seat_interface.name) == 0) {
         self->seat_ = (wl_seat*)wl_registry_bind(r, name, &wl_seat_interface, 1);
         static const wl_seat_listener seat_listener {
@@ -182,6 +197,19 @@ void App::seat_caps(void* data, wl_seat* seat, uint32_t caps) {
     } else if (!(caps & WL_SEAT_CAPABILITY_POINTER) && self->pointer_) {
         wl_pointer_release(self->pointer_);
         self->pointer_ = nullptr;
+    }
+    if ((caps & WL_SEAT_CAPABILITY_KEYBOARD) && !self->keyboardInput_) {
+        self->keyboardInput_ = std::make_unique<KeyboardInput>();
+        if (self->keyboardInput_->init(seat)) {
+            self->keyboardInput_->setKeyHandler([self](const KeyEvent& e) {
+                if (self->keyFocusTarget_) self->keyFocusTarget_(e);
+            });
+        } else {
+            self->keyboardInput_.reset();
+        }
+    } else if (!(caps & WL_SEAT_CAPABILITY_KEYBOARD) && self->keyboardInput_) {
+        self->keyboardInput_.reset();
+        self->keyFocusTarget_ = nullptr;
     }
 }
 
@@ -306,6 +334,8 @@ bool App::init() {
         fprintf(stderr, "compositor lacks wl_compositor or wlr-layer-shell\n");
         return false;
     }
+    fprintf(stderr, "bezel: lock path = %s\n",
+            sessionLockMgr_ ? "hard (ext-session-lock-v1)" : "soft (layer-shell fallback)");
     if (!egl_.init(display_)) return false;
 
     desktopIndex_ = std::make_unique<DesktopIndex>();
@@ -639,8 +669,11 @@ void App::finish() {
     brightnessService_.reset();
     toplevelService_.reset();
     workspaceService_.reset();
+    if (keyboardInput_) keyboardInput_.reset();
     if (pointer_) { wl_pointer_release(pointer_); pointer_ = nullptr; }
     if (seat_)    { wl_seat_destroy(seat_); seat_ = nullptr; }
+    if (idleNotifier_)    { ext_idle_notifier_v1_destroy(idleNotifier_); idleNotifier_ = nullptr; }
+    if (sessionLockMgr_)  { ext_session_lock_manager_v1_destroy(sessionLockMgr_); sessionLockMgr_ = nullptr; }
     if (layer_shell_) zwlr_layer_shell_v1_destroy(layer_shell_);
     if (compositor_) wl_compositor_destroy(compositor_);
     egl_.finish();

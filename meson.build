@@ -20,6 +20,9 @@ endif
 
 pipewire  = dependency('libpipewire-0.3', required : false)
 libcurl   = dependency('libcurl',        required : false)
+xkbcommon = dependency('xkbcommon',      required : true)
+cc        = meson.get_compiler('c')
+pam       = cc.find_library('pam',       required : true)
 
 if pipewire.found()
   add_project_arguments('-DHAVE_PIPEWIRE', language : 'cpp')
@@ -53,6 +56,10 @@ protocols = [
    'wlr-foreign-toplevel-management-unstable-v1'],
   [meson.project_source_root() / 'protocols/dwl-ipc-unstable-v2.xml',
    'dwl-ipc-unstable-v2'],
+  [meson.project_source_root() / 'protocols/ext-session-lock-v1.xml',
+   'ext-session-lock-v1'],
+  [meson.project_source_root() / 'protocols/ext-idle-notify-v1.xml',
+   'ext-idle-notify-v1'],
 ]
 
 gen = []
@@ -94,8 +101,10 @@ executable('bezel',
             'src/mpris_widget.cpp',
             'src/desktop_index.cpp', 'src/control_socket.cpp',
             'src/search_engine.cpp',
+            'src/config.cpp',
+            'src/keyboard_input.cpp',
             'src/nanovg_shim.cpp', gen],
             dependencies : [wl_client, wl_egl, egl, glesv2,
                              freetype, harfbuzz, nanovg_dep, sdbus_cpp, librsvg,
-                             pipewire, libcurl],
+                             pipewire, libcurl, xkbcommon, pam],
            install : true)

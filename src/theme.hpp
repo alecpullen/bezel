@@ -18,6 +18,10 @@ struct Theme {
     NVGcolor borderEmphasis;
     NVGcolor borderAccent;
 
+    NVGcolor lockBgColor;
+    float    lockBgOpacity;
+    NVGcolor lockAccent;
+
     NVGcolor green;
     NVGcolor cyan;
     NVGcolor magenta;
@@ -70,6 +74,10 @@ struct Theme {
             .borderHairline    = hexF(0.75f, 0.79f, 0.96f, 0.10f),
             .borderEmphasis    = hexF(0.75f, 0.79f, 0.96f, 0.14f),
             .borderAccent      = hexF(0.48f, 0.64f, 0.97f, 0.40f),
+
+            .lockBgColor       = hex(0x1a1b26),
+            .lockBgOpacity     = 0.95f,
+            .lockAccent        = hex(0x7aa2f7),
 
             .green             = hex(0x9ece6a),
             .cyan              = hex(0x7dcfff),
