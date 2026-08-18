@@ -46,8 +46,11 @@ struct CommandEntry {
 
 constexpr CommandEntry kCommands[] = {
     {"Lock",       "system-lock-screen", CommandAction::Lock},
-    {"Suspend",    "system-suspend",     CommandAction::Suspend},
     {"Log Out",    "system-log-out",     CommandAction::Logout},
+    {"Suspend",    "system-suspend",     CommandAction::Suspend},
+    {"Hibernate",  "system-hibernate",   CommandAction::Hibernate},
+    {"Reboot",     "system-reboot",      CommandAction::Reboot},
+    {"Shut Down",  "system-shutdown",    CommandAction::PowerOff},
     {"Quit Bezel", "",                   CommandAction::QuitBezel},
 };
 

@@ -1,12 +1,16 @@
+#include <csignal>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <ctime>
 #include <exception>
 #include <memory>
+#include <string>
 #include <sys/types.h>
 #include <vector>
 #include <poll.h>
 #include <linux/input-event-codes.h>
+#include <xkbcommon/xkbcommon-keysyms.h>
 #include <wayland-client-protocol.h>
 #include "egl.hpp"
 #include "panel.hpp"
@@ -29,6 +33,14 @@
 #include "search_engine.hpp"
 #include "toplevel_service.hpp"
 #include "workspace_service.hpp"
+#include "config.hpp"
+#include "keyboard_input.hpp"
+#include "idle_service.hpp"
+#include "pam_auth.hpp"
+#include "lock_service.hpp"
+#include "lock_overlay.hpp"
+#include "logind_service.hpp"
+#include "power_menu.hpp"
 
 struct Output {
     wl_output* wl       = nullptr;
@@ -77,6 +89,9 @@ class App {
         zwlr_layer_shell_v1* layer_shell_  = nullptr;
         zwlr_foreign_toplevel_manager_v1* toplevel_manager_ = nullptr;
         zdwl_ipc_manager_v2* dwl_ipc_manager_ = nullptr;
+        ext_session_lock_manager_v1* sessionLockMgr_ = nullptr;
+        ext_idle_notifier_v1* idleNotifier_ = nullptr;
+        SessionConfig         sessionConfig_ = loadSessionConfig();
         wl_seat*             seat_             = nullptr;
         wl_pointer*          pointer_          = nullptr;
         Panel*               hoveredPanel_     = nullptr;
@@ -106,11 +121,38 @@ class App {
         std::unique_ptr<DesktopIndex>     desktopIndex_;
         std::unique_ptr<SearchEngine>     searchEngine_;
         std::unique_ptr<ControlSocket>    controlSocket_;
+        std::unique_ptr<KeyboardInput>    keyboardInput_;
+        std::function<void(const KeyEvent&)> keyFocusTarget_;
+        std::unique_ptr<IdleService>      idleService_;
+        std::unique_ptr<PamAuth>          pamAuth_;
+        std::unique_ptr<LockService>      lockService_;
+        std::vector<std::unique_ptr<LockOverlay>> lockOverlays_;
+        std::unique_ptr<LogindService>    logindService_;
+        std::unique_ptr<PowerMenu>        powerMenu_;
+        ext_session_lock_v1*              sessionLock_       = nullptr;
+        bool                              hardLockRequested_ = false;
+        bool                              hardLockConfirmed_ = false;
+        bool                              hardLockCancelled_ = false;  // user unlocked an unconfirmed hard lock
+        bool                              capsLockState_     = false;
+        bool                              pointerOverPowerMenu_ = false;
+        std::string                       lockPassword_;
 
         void handleSocketCommand(std::string_view cmd);
         void handleCommandAction(CommandAction action);
         Panel* activeLauncherTarget();
         Output* activeOutput();
+        void doLock();
+        void doUnlock();
+        void createHardLockSurfaces();
+        void destroyLockSurfaces();
+        void onLockStateChanged();
+        void lockOnKey(const KeyEvent& ev);
+        void buildLockView(LockViewState& view);
+        void clearPassword();
+        void showPowerMenu();
+        void handlePowerAction(PowerAction action);
+        static void session_lock_locked(void* data, ext_session_lock_v1* s);
+        static void session_lock_finished(void* data, ext_session_lock_v1* s);
         void tick();
 };
 
@@ -121,6 +163,22 @@ void App::create_panel(Output& o) {
         audioService_.get(), brightnessService_.get(), networkService_.get(), mprisService_.get(),
         trayService_.get(), seat_);
     o.panel->setScale(o.scale);
+    // If the session is already locked, cover the newly hot-plugged output with
+    // a lock surface too, so a multi-monitor setup never shows a live desktop
+    // on an uncovered output.
+    if (lockService_ && lockService_->locked()) {
+        auto ov = std::make_unique<LockOverlay>(
+            egl_, theme_, compositor_, layer_shell_, o.wl, o.scale);
+        bool shown = false;
+        if (sessionLock_ && hardLockConfirmed_)
+            shown = ov->showHard(sessionLock_);
+        else
+            shown = ov->showSoft();
+        if (shown) {
+            ov->setOnKey([this](const KeyEvent& e) { lockOnKey(e); });
+            lockOverlays_.push_back(std::move(ov));
+        }
+    }
 }
 
 void App::reg_global(void* data, wl_registry* r, uint32_t name, const char* iface, uint32_t version) {
@@ -139,6 +197,14 @@ void App::reg_global(void* data, wl_registry* r, uint32_t name, const char* ifac
         self->workspaceService_->init();
         for (auto& o : self->outputs_)
             self->workspaceService_->add_output(o->wl);
+    } else if (strcmp(iface, ext_session_lock_manager_v1_interface.name) == 0) {
+        self->sessionLockMgr_ = (ext_session_lock_manager_v1*)wl_registry_bind(
+            r, name, &ext_session_lock_manager_v1_interface, 1);
+        fprintf(stderr, "bezel: ext-session-lock-v1 available (hard lock)\n");
+    } else if (strcmp(iface, ext_idle_notifier_v1_interface.name) == 0) {
+        self->idleNotifier_ = (ext_idle_notifier_v1*)wl_registry_bind(
+            r, name, &ext_idle_notifier_v1_interface, 1);
+        fprintf(stderr, "bezel: ext-idle-notify-v1 available\n");
     } else if (strcmp(iface, wl_seat_interface.name) == 0) {
         self->seat_ = (wl_seat*)wl_registry_bind(r, name, &wl_seat_interface, 1);
         static const wl_seat_listener seat_listener {
@@ -183,11 +249,35 @@ void App::seat_caps(void* data, wl_seat* seat, uint32_t caps) {
         wl_pointer_release(self->pointer_);
         self->pointer_ = nullptr;
     }
+    if ((caps & WL_SEAT_CAPABILITY_KEYBOARD) && !self->keyboardInput_) {
+        self->keyboardInput_ = std::make_unique<KeyboardInput>();
+        if (self->keyboardInput_->init(seat)) {
+            self->keyboardInput_->setKeyHandler([self](const KeyEvent& e) {
+                if (self->keyFocusTarget_) self->keyFocusTarget_(e);
+            });
+        } else {
+            self->keyboardInput_.reset();
+        }
+    } else if (!(caps & WL_SEAT_CAPABILITY_KEYBOARD) && self->keyboardInput_) {
+        self->keyboardInput_.reset();
+        self->keyFocusTarget_ = nullptr;
+    }
 }
 
 void App::ptr_enter(void* data, wl_pointer*, uint32_t, wl_surface* surface,
                     wl_fixed_t sx, wl_fixed_t sy) {
     auto* self = static_cast<App*>(data);
+    if (self->powerMenu_ && self->powerMenu_->visible() &&
+        self->powerMenu_->surface() == surface) {
+        if (self->hoveredPanel_) self->hoveredPanel_->handlePointerLeave();
+        self->hoveredPanel_ = nullptr;
+        self->hoveredMenuOwner_ = nullptr;
+        self->pointerOverPowerMenu_ = true;
+        self->ptrX_ = wl_fixed_to_int(sx);
+        self->ptrY_ = wl_fixed_to_int(sy);
+        self->powerMenu_->handlePointerMotion(self->ptrX_, self->ptrY_);
+        return;
+    }
     if (self->notificationOverlay_ && self->notificationOverlay_->surface() == surface) {
         if (self->hoveredPanel_) self->hoveredPanel_->handlePointerLeave();
         self->hoveredPanel_ = nullptr;
@@ -206,6 +296,7 @@ void App::ptr_enter(void* data, wl_pointer*, uint32_t, wl_surface* surface,
         // OSD is non-interactive; no further routing
         return;
     }
+    self->pointerOverPowerMenu_ = false;
     self->pointerOverOverlay_ = false;
     self->pointerOverOsd_     = false;
     self->hoveredPanel_     = nullptr;
@@ -233,6 +324,9 @@ void App::ptr_enter(void* data, wl_pointer*, uint32_t, wl_surface* surface,
 
 void App::ptr_leave(void* data, wl_pointer*, uint32_t, wl_surface*) {
     auto* self = static_cast<App*>(data);
+    if (self->pointerOverPowerMenu_ && self->powerMenu_) {
+        self->pointerOverPowerMenu_ = false;
+    }
     if (self->pointerOverOverlay_ && self->notificationOverlay_) {
         self->notificationOverlay_->handlePointerLeave();
     }
@@ -248,6 +342,10 @@ void App::ptr_motion(void* data, wl_pointer*, uint32_t, wl_fixed_t sx, wl_fixed_
     auto* self = static_cast<App*>(data);
     self->ptrX_ = wl_fixed_to_int(sx);
     self->ptrY_ = wl_fixed_to_int(sy);
+    if (self->pointerOverPowerMenu_ && self->powerMenu_) {
+        self->powerMenu_->handlePointerMotion(self->ptrX_, self->ptrY_);
+        return;
+    }
     if (self->pointerOverOverlay_ && self->notificationOverlay_) {
         self->notificationOverlay_->handlePointerMotion(self->ptrX_, self->ptrY_);
         return;
@@ -262,6 +360,10 @@ void App::ptr_motion(void* data, wl_pointer*, uint32_t, wl_fixed_t sx, wl_fixed_
 void App::ptr_button(void* data, wl_pointer*, uint32_t, uint32_t, uint32_t button, uint32_t state) {
     auto* self = static_cast<App*>(data);
     if (state != WL_POINTER_BUTTON_STATE_PRESSED) return;
+    if (self->pointerOverPowerMenu_ && self->powerMenu_) {
+        self->powerMenu_->handlePointerButton(self->ptrX_, self->ptrY_, button);
+        return;
+    }
     if (self->pointerOverOverlay_ && self->notificationOverlay_) {
         self->notificationOverlay_->handlePointerButton(self->ptrX_, self->ptrY_, button);
         return;
@@ -306,6 +408,25 @@ bool App::init() {
         fprintf(stderr, "compositor lacks wl_compositor or wlr-layer-shell\n");
         return false;
     }
+    fprintf(stderr, "bezel: lock path = %s\n",
+            sessionLockMgr_ ? "hard (ext-session-lock-v1)" : "soft (layer-shell fallback)");
+    if (idleNotifier_ && seat_) {
+        idleService_ = std::make_unique<IdleService>();
+        if (idleService_->init(idleNotifier_, seat_, sessionConfig_)) {
+            idleService_->subscribe([this] {
+                if (!idleService_ || idleService_->state() != IdleState::Idle) return;
+                if (sessionConfig_.lock_on_idle && !idleService_->inhibited()) {
+                    fprintf(stderr, "bezel: idle -> locking\n");
+                    doLock();
+                }
+            });
+        } else {
+            idleService_.reset();
+        }
+    }
+    pamAuth_ = std::make_unique<PamAuth>();
+    lockService_ = std::make_unique<LockService>(*pamAuth_, sessionConfig_);
+    lockService_->setStateCallback([this] { onLockStateChanged(); });
     if (!egl_.init(display_)) return false;
 
     desktopIndex_ = std::make_unique<DesktopIndex>();
@@ -326,6 +447,20 @@ bool App::init() {
         if (!networkService_->init()) {
             networkService_.reset();
         }
+        logindService_ = std::make_unique<LogindService>(busManager_->system());
+        if (!logindService_->init()) {
+            logindService_.reset();
+        }
+    }
+    // Power menu (needs compositor + an output to follow focus).
+    if (compositor_ && layer_shell_ && !outputs_.empty()) {
+        Output* focus = activeOutput();
+        powerMenu_ = std::make_unique<PowerMenu>(
+            egl_, theme_, compositor_, layer_shell_,
+            focus ? focus->wl : nullptr, focus ? focus->scale : 1);
+        powerMenu_->setOnAction([this](PowerAction a) { handlePowerAction(a); });
+        powerMenu_->setOnKey([this](const KeyEvent& e) { powerMenu_->handleKey(e); });
+        powerMenu_->setOnHide([this] { keyFocusTarget_ = nullptr; });
     }
     brightnessService_ = std::make_unique<BrightnessService>();
     if (!brightnessService_->init()) {
@@ -351,6 +486,12 @@ bool App::init() {
     }
 
     for (auto& o : outputs_) create_panel(*o);
+    if (powerMenu_) {
+        for (auto& o : outputs_) {
+            if (o->panel)
+                o->panel->setPowerClickCallback([this] { showPowerMenu(); });
+        }
+    }
     if (notificationService_ && compositor_ && layer_shell_ && !outputs_.empty()) {
         Output* focus = activeOutput();
         notificationOverlay_ = std::make_unique<NotificationOverlay>(
@@ -432,6 +573,12 @@ void App::run() {
             pollFds.push_back({mprisService_->artFd(), POLLIN | POLLOUT, 0});
         }
 
+        int pamFdIdx = -1;
+        if (lockService_ && lockService_->resultFd() >= 0) {
+            pamFdIdx = (int)pollFds.size();
+            pollFds.push_back({lockService_->resultFd(), POLLIN, 0});
+        }
+
         if (controlSocket_) {
             pollFds.push_back({controlSocket_->fd(), POLLIN, 0});
         }
@@ -461,6 +608,10 @@ void App::run() {
 
         if (busManager_)
             busManager_->processPending();
+
+        if (pamFdIdx >= 0 && (pollFds[pamFdIdx].revents & (POLLIN | POLLHUP | POLLERR))) {
+            if (lockService_) lockService_->pollPam();
+        }
 
         if (controlSocket_ && (pollFds.back().revents & POLLIN))
             controlSocket_->dispatch([this](std::string_view cmd){ handleSocketCommand(cmd); });
@@ -492,6 +643,12 @@ void App::run() {
         }
         if (workspaceService_) {
             workspaceService_->tick();
+        }
+        if (idleService_) {
+            idleService_->tick();
+        }
+        if (lockService_) {
+            lockService_->tick();
         }
         
         tick();
@@ -536,7 +693,230 @@ Output* App::activeOutput() {
     return nullptr;
 }
 
+void App::session_lock_locked(void* data, ext_session_lock_v1*) {
+    auto* self = static_cast<App*>(data);
+    self->hardLockConfirmed_ = true;
+    if (self->lockService_) self->lockService_->onHardLocked();
+}
+
+void App::session_lock_finished(void* data, ext_session_lock_v1* s) {
+    auto* self = static_cast<App*>(data);
+    if (self->sessionLock_ == s) self->sessionLock_ = nullptr;
+    // If the user cancelled this in-flight (unconfirmed) lock, a late finished
+    // event must not re-lock the session.
+    if (self->hardLockCancelled_) {
+        self->hardLockCancelled_ = false;
+        return;
+    }
+    // If the compositor denied the hard lock before confirming, fall back to
+    // the soft-lock path.
+    if (self->lockService_ && self->lockService_->mode() == LockMode::Hard &&
+        !self->lockService_->locked() && !self->hardLockConfirmed_) {
+        self->hardLockRequested_ = false;
+        self->destroyLockSurfaces();
+        self->doLock();
+        return;
+    }
+    // Post-confirmation finished: the compositor ended a confirmed lock
+    // (timeout, denial, etc.). Tear down lock state so we don't keep reporting
+    // locked with orphaned lock surfaces.
+    if (self->lockService_ && self->lockService_->locked()) {
+        self->hardLockRequested_ = false;
+        self->hardLockConfirmed_ = false;
+        self->destroyLockSurfaces();
+        self->lockService_->unlock();
+        self->keyFocusTarget_ = nullptr;
+    }
+}
+
+void App::clearPassword() {
+    // Zero the password bytes before releasing the string so plaintext does
+    // not linger in freed heap capacity.
+    if (!lockPassword_.empty()) {
+        explicit_bzero(lockPassword_.data(), lockPassword_.size());
+        lockPassword_.clear();
+    }
+}
+
+void App::doLock() {
+    if (!lockService_ || lockService_->locked() || lockService_->authenticating()) return;
+    if (outputs_.empty() || !compositor_) return;
+
+    clearPassword();
+    destroyLockSurfaces();
+    lockOverlays_.clear();
+
+    bool hardOk = false;
+    if (sessionLockMgr_ && !sessionLock_ && !hardLockRequested_) {
+        // Hard lock path.
+        hardLockCancelled_ = false;
+        sessionLock_ = ext_session_lock_manager_v1_lock(sessionLockMgr_);
+        static const ext_session_lock_v1_listener listener = {
+            .locked   = session_lock_locked,
+            .finished = session_lock_finished,
+        };
+        ext_session_lock_v1_add_listener(sessionLock_, &listener, this);
+        hardLockRequested_ = true;
+        hardLockConfirmed_ = false;
+        createHardLockSurfaces();
+        if (!lockOverlays_.empty()) {
+            hardOk = true;
+            lockService_->beginLock(LockMode::Hard);
+        } else {
+            // No lock surface could be created (e.g. another client already
+            // holds the session lock). Tear down the hard lock and fall back
+            // to the soft-lock path so the session is still covered.
+            hardLockRequested_ = false;
+            hardLockCancelled_ = true;
+            if (sessionLock_) ext_session_lock_v1_destroy(sessionLock_);
+            sessionLock_ = nullptr;
+        }
+    } else if (sessionLock_ && hardLockConfirmed_) {
+        // Hard lock already confirmed (e.g. re-entered on idle); keep it.
+        hardOk = true;
+        lockService_->beginLock(LockMode::Hard);
+    }
+
+    if (!hardOk) {
+        // Soft lock path.
+        for (auto& o : outputs_) {
+            auto ov = std::make_unique<LockOverlay>(
+                egl_, theme_, compositor_, layer_shell_, o->wl, o->scale);
+            if (ov->showSoft()) {
+                ov->setOnKey([this](const KeyEvent& e) { lockOnKey(e); });
+                lockOverlays_.push_back(std::move(ov));
+            }
+        }
+        if (lockOverlays_.empty()) return;
+        lockService_->beginLock(LockMode::Soft);
+    }
+
+    // Route keyboard to the lock overlay.
+    keyFocusTarget_ = [this](const KeyEvent& e) { lockOnKey(e); };
+    lockService_->setStateCallback([this] { onLockStateChanged(); });
+}
+
+void App::createHardLockSurfaces() {
+    if (!sessionLock_) return;
+    for (auto& o : outputs_) {
+        auto ov = std::make_unique<LockOverlay>(
+            egl_, theme_, compositor_, layer_shell_, o->wl, o->scale);
+        if (ov->showHard(sessionLock_)) {
+            ov->setOnKey([this](const KeyEvent& e) { lockOnKey(e); });
+            lockOverlays_.push_back(std::move(ov));
+        }
+    }
+}
+
+void App::destroyLockSurfaces() {
+    for (auto& ov : lockOverlays_) ov->hide();
+    lockOverlays_.clear();
+}
+
+void App::doUnlock() {
+    if (!lockService_) return;
+    clearPassword();
+    if (hardLockConfirmed_ && sessionLock_) {
+        ext_session_lock_v1_unlock_and_destroy(sessionLock_);
+        sessionLock_ = nullptr;
+    } else if (hardLockRequested_ && !hardLockConfirmed_) {
+        // Unconfirmed in-flight hard lock: mark it cancelled so a late
+        // finished event doesn't re-lock. It will be destroyed via destroy().
+        hardLockCancelled_ = true;
+        if (sessionLock_) ext_session_lock_v1_destroy(sessionLock_);
+        sessionLock_ = nullptr;
+    }
+    hardLockRequested_ = false;
+    hardLockConfirmed_ = false;
+    destroyLockSurfaces();
+    lockService_->unlock();
+    keyFocusTarget_ = nullptr;
+}
+
+void App::onLockStateChanged() {
+    if (!lockService_) return;
+    if (!lockService_->locked() && !lockService_->authenticating()) {
+        // Session unlocked (PAM success or unlock request).
+        if (hardLockConfirmed_ && sessionLock_) {
+            ext_session_lock_v1_unlock_and_destroy(sessionLock_);
+            sessionLock_ = nullptr;
+        } else if (hardLockRequested_ && !hardLockConfirmed_) {
+            hardLockCancelled_ = true;
+            if (sessionLock_) ext_session_lock_v1_destroy(sessionLock_);
+            sessionLock_ = nullptr;
+        }
+        hardLockRequested_ = false;
+        hardLockConfirmed_ = false;
+        destroyLockSurfaces();
+        keyFocusTarget_ = nullptr;
+    }
+}
+
+void App::lockOnKey(const KeyEvent& ev) {
+    if (!lockService_ || (!lockService_->locked() && !lockService_->authenticating())) return;
+    if (ev.pressed) capsLockState_ = ev.caps_lock;
+    if (!ev.pressed) return;
+
+    switch (ev.keysym) {
+        case XKB_KEY_Escape:
+            clearPassword();
+            break;
+        case XKB_KEY_Return:
+        case XKB_KEY_KP_Enter:
+            if (!lockPassword_.empty() && !lockService_->authenticating())
+                lockService_->submitPassword(lockPassword_);
+            clearPassword();
+            break;
+        case XKB_KEY_BackSpace:
+            if (!lockPassword_.empty())
+                lockPassword_.pop_back();
+            break;
+        default:
+            if (ev.text[0] != '\0')
+                lockPassword_ += ev.text;
+            break;
+    }
+}
+
+void App::buildLockView(LockViewState& view) {
+    if (!lockService_) return;
+    time_t t = time(nullptr);
+    struct tm lt;
+    localtime_r(&t, &lt);
+    char buf[64];
+    strftime(buf, sizeof(buf), "%H:%M", &lt);
+    view.timeText = buf;
+    strftime(buf, sizeof(buf), "%a %d %b", &lt);
+    view.dateText = buf;
+
+    if (batteryService_)
+        view.batteryText = std::to_string(batteryService_->info().percentage) + "%";
+    if (mprisService_ && mprisService_->info().status != MprisInfo::Status::Stopped) {
+        const auto& mi = mprisService_->info();
+        view.mediaText = mi.title;
+        if (!mi.artist.empty()) view.mediaText += " - " + mi.artist;
+    }
+    view.passwordLen = (int)lockPassword_.size();
+    view.capsLock = capsLockState_;
+    view.failedAttempts = lockService_->failedAttempts();
+    view.statusMessage = lockService_->statusMessage();
+    view.authenticating = lockService_->authenticating();
+}
+
 void App::handleSocketCommand(std::string_view cmd) {
+    // Security: while locked, refuse everything except the unlock path.
+    if (lockService_ && lockService_->locked() && cmd != "unlock") {
+        fprintf(stderr, "control socket: ignored '%.*s' while locked\n",
+                (int)cmd.size(), cmd.data());
+        return;
+    }
+    // Security: refuse to cancel an in-flight (unconfirmed) hard lock via the
+    // socket. A same-uid process could otherwise race the lock and destroy it
+    // before the compositor confirms it, leaving the desktop accessible.
+    if (cmd == "unlock" && hardLockRequested_ && !hardLockConfirmed_) {
+        fprintf(stderr, "control socket: refused 'unlock' while hard lock is engaging\n");
+        return;
+    }
     if (cmd == "toggle_launcher") {
         // If any panel is already in launcher mode, dismiss it
         for (auto& o : outputs_) {
@@ -550,22 +930,96 @@ void App::handleSocketCommand(std::string_view cmd) {
         if (target && searchEngine_)
             target->activateLauncher(*searchEngine_,
                 [this](CommandAction a) { handleCommandAction(a); });
+    } else if (cmd == "lock") {
+        doLock();
+    } else if (cmd == "unlock") {
+        doUnlock();
+    } else if (cmd == "power") {
+        showPowerMenu();
+    } else if (cmd == "inhibit" || cmd.rfind("inhibit ", 0) == 0) {
+        // parse "0" | "1" | "toggle"; default toggle
+        if (!idleService_) {
+            fprintf(stderr, "control socket: idle service unavailable\n");
+            return;
+        }
+        std::string arg(cmd.substr(cmd.find(' ') == std::string_view::npos
+                                       ? cmd.size() : cmd.find(' ') + 1));
+        bool inhibit;
+        if (arg == "1") inhibit = true;
+        else if (arg == "0") inhibit = false;
+        else inhibit = !idleService_->inhibited(); // toggle / bare "inhibit"
+        idleService_->setInhibited(inhibit);
+        fprintf(stderr, "control socket: idle %s\n", inhibit ? "inhibited" : "uninhibited");
     } else {
         fprintf(stderr, "control socket: unknown command '%.*s'\n",
                 (int)cmd.size(), cmd.data());
     }
 }
 
+void App::showPowerMenu() {
+    if (!powerMenu_) return;
+    if (lockService_ && lockService_->locked()) return;  // refuse while locked
+    if (!logindService_) return;
+
+    std::vector<PowerAction> actions;
+    actions.push_back(PowerAction::Lock);
+    if (logindService_->canSuspend())   actions.push_back(PowerAction::Suspend);
+    if (logindService_->canHibernate()) actions.push_back(PowerAction::Hibernate);
+    if (logindService_->canReboot())    actions.push_back(PowerAction::Reboot);
+    if (logindService_->canPowerOff())  actions.push_back(PowerAction::ShutDown);
+    actions.push_back(PowerAction::Logout);
+
+    Output* focus = activeOutput();
+    powerMenu_->setOutput(focus ? focus->wl : nullptr, focus ? focus->scale : 1);
+    powerMenu_->show(std::move(actions));
+    // Route keyboard to the power menu while it's visible.
+    keyFocusTarget_ = [this](const KeyEvent& e) { powerMenu_->handleKey(e); };
+}
+
+void App::handlePowerAction(PowerAction action) {
+    if (lockService_ && lockService_->locked()) return;
+    keyFocusTarget_ = nullptr;
+    switch (action) {
+        case PowerAction::Lock:
+            doLock();
+            break;
+        case PowerAction::Logout:
+            if (logindService_) logindService_->logout();
+            break;
+        case PowerAction::Suspend:
+            if (logindService_) logindService_->suspend();
+            break;
+        case PowerAction::Hibernate:
+            if (logindService_) logindService_->hibernate();
+            break;
+        case PowerAction::Reboot:
+            if (logindService_) logindService_->reboot();
+            break;
+        case PowerAction::ShutDown:
+            if (logindService_) logindService_->powerOff();
+            break;
+    }
+}
+
 void App::handleCommandAction(CommandAction action) {
     switch (action) {
         case CommandAction::Lock:
-            system("loginctl lock-session");
+            doLock();
             break;
         case CommandAction::Suspend:
-            system("systemctl suspend");
+            if (logindService_) logindService_->suspend();
+            break;
+        case CommandAction::Hibernate:
+            if (logindService_) logindService_->hibernate();
+            break;
+        case CommandAction::Reboot:
+            if (logindService_) logindService_->reboot();
+            break;
+        case CommandAction::PowerOff:
+            if (logindService_) logindService_->powerOff();
             break;
         case CommandAction::Logout:
-            system("loginctl terminate-session \"\"");
+            if (logindService_) logindService_->logout();
             break;
         case CommandAction::QuitBezel:
             running_ = false;
@@ -617,6 +1071,19 @@ void App::tick() {
         }
         osdOverlay_->render();
     }
+    if (powerMenu_ && powerMenu_->visible()) {
+        Output* focus = activeOutput();
+        if (focus) powerMenu_->setOutput(focus->wl, focus->scale);
+        powerMenu_->render();
+    }
+    if (!lockOverlays_.empty()) {
+        // Render during Locking/Locked/SoftLocked/Authenticating so the lock
+        // surface presents a real frame (required for the compositor to fire
+        // the ext-session-lock locked event and for hard-lock surfaces).
+        LockViewState view;
+        buildLockView(view);
+        for (auto& ov : lockOverlays_) ov->render(view);
+    }
     for (auto& o : outputs_) {
         if (o->panel) {
             o->panel->tick();
@@ -637,10 +1104,19 @@ void App::finish() {
     networkService_.reset();
     audioService_.reset();
     brightnessService_.reset();
+    idleService_.reset();
     toplevelService_.reset();
     workspaceService_.reset();
+    destroyLockSurfaces();
+    powerMenu_.reset();
+    lockService_.reset();
+    pamAuth_.reset();
+    logindService_.reset();
+    if (keyboardInput_) keyboardInput_.reset();
     if (pointer_) { wl_pointer_release(pointer_); pointer_ = nullptr; }
     if (seat_)    { wl_seat_destroy(seat_); seat_ = nullptr; }
+    if (idleNotifier_)    { ext_idle_notifier_v1_destroy(idleNotifier_); idleNotifier_ = nullptr; }
+    if (sessionLockMgr_)  { ext_session_lock_manager_v1_destroy(sessionLockMgr_); sessionLockMgr_ = nullptr; }
     if (layer_shell_) zwlr_layer_shell_v1_destroy(layer_shell_);
     if (compositor_) wl_compositor_destroy(compositor_);
     egl_.finish();
@@ -649,6 +1125,9 @@ void App::finish() {
 }
 
 int main() {
+    // Writing to a pipe whose reader has closed (e.g. the forked PAM helper
+    // exited before reading) would otherwise kill the panel with SIGPIPE.
+    signal(SIGPIPE, SIG_IGN);
     App app;
     if (!app.init()) return 1;
     app.run();

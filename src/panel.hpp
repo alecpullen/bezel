@@ -68,6 +68,9 @@ public:
 
     void setTrayEnabled(bool enabled);
     wl_surface* trayTooltipSurface() const;
+    // Wire a callback that opens the power menu when the panel's power button
+    // is clicked. Setting a non-null callback adds the button to the layout.
+    void setPowerClickCallback(std::function<void()> cb);
 
 private:
     void resize(int w, int h);
@@ -124,6 +127,8 @@ private:
     std::unique_ptr<BoxLayout>          root_;
     std::unique_ptr<ContextMenuSurface> contextMenuSurface_;
     std::unique_ptr<TrayTooltip>        trayTooltip_;
+    std::function<void()>               powerClickCb_;
+    bool                                powerButtonEnabled_ = false;
     std::set<std::string>               pinnedAppIds_;
 
     static constexpr int HEIGHT         = 48;
