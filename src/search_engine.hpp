@@ -8,7 +8,10 @@ class DesktopIndex;
 class ToplevelService;
 
 enum class ResultKind : int { Application = 0, Window = 1, Command = 2 };
-enum class CommandAction { Lock, Suspend, Logout, QuitBezel };
+enum class CommandAction {
+    Lock, Suspend, Logout, QuitBezel,
+    Reboot, PowerOff, Hibernate,
+};
 
 struct SearchResult {
     ResultKind   kind;

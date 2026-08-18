@@ -38,6 +38,8 @@
 #include "pam_auth.hpp"
 #include "lock_service.hpp"
 #include "lock_overlay.hpp"
+#include "logind_service.hpp"
+#include "power_menu.hpp"
 
 struct Output {
     wl_output* wl       = nullptr;
@@ -124,10 +126,13 @@ class App {
         std::unique_ptr<PamAuth>          pamAuth_;
         std::unique_ptr<LockService>      lockService_;
         std::vector<std::unique_ptr<LockOverlay>> lockOverlays_;
+        std::unique_ptr<LogindService>    logindService_;
+        std::unique_ptr<PowerMenu>        powerMenu_;
         ext_session_lock_v1*              sessionLock_       = nullptr;
         bool                              hardLockRequested_ = false;
         bool                              hardLockConfirmed_ = false;
         bool                              capsLockState_     = false;
+        bool                              pointerOverPowerMenu_ = false;
         std::string                       lockPassword_;
 
         void handleSocketCommand(std::string_view cmd);
@@ -141,6 +146,8 @@ class App {
         void onLockStateChanged();
         void lockOnKey(const KeyEvent& ev);
         void buildLockView(LockViewState& view);
+        void showPowerMenu();
+        void handlePowerAction(PowerAction action);
         static void session_lock_locked(void* data, ext_session_lock_v1* s);
         static void session_lock_finished(void* data, ext_session_lock_v1* s);
         void tick();
@@ -241,6 +248,17 @@ void App::seat_caps(void* data, wl_seat* seat, uint32_t caps) {
 void App::ptr_enter(void* data, wl_pointer*, uint32_t, wl_surface* surface,
                     wl_fixed_t sx, wl_fixed_t sy) {
     auto* self = static_cast<App*>(data);
+    if (self->powerMenu_ && self->powerMenu_->visible() &&
+        self->powerMenu_->surface() == surface) {
+        if (self->hoveredPanel_) self->hoveredPanel_->handlePointerLeave();
+        self->hoveredPanel_ = nullptr;
+        self->hoveredMenuOwner_ = nullptr;
+        self->pointerOverPowerMenu_ = true;
+        self->ptrX_ = wl_fixed_to_int(sx);
+        self->ptrY_ = wl_fixed_to_int(sy);
+        self->powerMenu_->handlePointerMotion(self->ptrX_, self->ptrY_);
+        return;
+    }
     if (self->notificationOverlay_ && self->notificationOverlay_->surface() == surface) {
         if (self->hoveredPanel_) self->hoveredPanel_->handlePointerLeave();
         self->hoveredPanel_ = nullptr;
@@ -259,6 +277,7 @@ void App::ptr_enter(void* data, wl_pointer*, uint32_t, wl_surface* surface,
         // OSD is non-interactive; no further routing
         return;
     }
+    self->pointerOverPowerMenu_ = false;
     self->pointerOverOverlay_ = false;
     self->pointerOverOsd_     = false;
     self->hoveredPanel_     = nullptr;
@@ -286,6 +305,9 @@ void App::ptr_enter(void* data, wl_pointer*, uint32_t, wl_surface* surface,
 
 void App::ptr_leave(void* data, wl_pointer*, uint32_t, wl_surface*) {
     auto* self = static_cast<App*>(data);
+    if (self->pointerOverPowerMenu_ && self->powerMenu_) {
+        self->pointerOverPowerMenu_ = false;
+    }
     if (self->pointerOverOverlay_ && self->notificationOverlay_) {
         self->notificationOverlay_->handlePointerLeave();
     }
@@ -301,6 +323,10 @@ void App::ptr_motion(void* data, wl_pointer*, uint32_t, wl_fixed_t sx, wl_fixed_
     auto* self = static_cast<App*>(data);
     self->ptrX_ = wl_fixed_to_int(sx);
     self->ptrY_ = wl_fixed_to_int(sy);
+    if (self->pointerOverPowerMenu_ && self->powerMenu_) {
+        self->powerMenu_->handlePointerMotion(self->ptrX_, self->ptrY_);
+        return;
+    }
     if (self->pointerOverOverlay_ && self->notificationOverlay_) {
         self->notificationOverlay_->handlePointerMotion(self->ptrX_, self->ptrY_);
         return;
@@ -315,6 +341,10 @@ void App::ptr_motion(void* data, wl_pointer*, uint32_t, wl_fixed_t sx, wl_fixed_
 void App::ptr_button(void* data, wl_pointer*, uint32_t, uint32_t, uint32_t button, uint32_t state) {
     auto* self = static_cast<App*>(data);
     if (state != WL_POINTER_BUTTON_STATE_PRESSED) return;
+    if (self->pointerOverPowerMenu_ && self->powerMenu_) {
+        self->powerMenu_->handlePointerButton(self->ptrX_, self->ptrY_, button);
+        return;
+    }
     if (self->pointerOverOverlay_ && self->notificationOverlay_) {
         self->notificationOverlay_->handlePointerButton(self->ptrX_, self->ptrY_, button);
         return;
@@ -398,6 +428,20 @@ bool App::init() {
         if (!networkService_->init()) {
             networkService_.reset();
         }
+        logindService_ = std::make_unique<LogindService>(busManager_->system());
+        if (!logindService_->init()) {
+            logindService_.reset();
+        }
+    }
+    // Power menu (needs compositor + an output to follow focus).
+    if (compositor_ && layer_shell_ && !outputs_.empty()) {
+        Output* focus = activeOutput();
+        powerMenu_ = std::make_unique<PowerMenu>(
+            egl_, theme_, compositor_, layer_shell_,
+            focus ? focus->wl : nullptr, focus ? focus->scale : 1);
+        powerMenu_->setOnAction([this](PowerAction a) { handlePowerAction(a); });
+        powerMenu_->setOnKey([this](const KeyEvent& e) { powerMenu_->handleKey(e); });
+        powerMenu_->setOnHide([this] { keyFocusTarget_ = nullptr; });
     }
     brightnessService_ = std::make_unique<BrightnessService>();
     if (!brightnessService_->init()) {
@@ -423,6 +467,12 @@ bool App::init() {
     }
 
     for (auto& o : outputs_) create_panel(*o);
+    if (powerMenu_) {
+        for (auto& o : outputs_) {
+            if (o->panel)
+                o->panel->setPowerClickCallback([this] { showPowerMenu(); });
+        }
+    }
     if (notificationService_ && compositor_ && layer_shell_ && !outputs_.empty()) {
         Output* focus = activeOutput();
         notificationOverlay_ = std::make_unique<NotificationOverlay>(
@@ -806,6 +856,8 @@ void App::handleSocketCommand(std::string_view cmd) {
         doLock();
     } else if (cmd == "unlock") {
         doUnlock();
+    } else if (cmd == "power") {
+        showPowerMenu();
     } else if (cmd == "inhibit" || cmd.rfind("inhibit ", 0) == 0) {
         // parse "0" | "1" | "toggle"; default toggle
         if (!idleService_) {
@@ -826,16 +878,70 @@ void App::handleSocketCommand(std::string_view cmd) {
     }
 }
 
+void App::showPowerMenu() {
+    if (!powerMenu_) return;
+    if (lockService_ && lockService_->locked()) return;  // refuse while locked
+    if (!logindService_) return;
+
+    std::vector<PowerAction> actions;
+    actions.push_back(PowerAction::Lock);
+    if (logindService_->canSuspend())   actions.push_back(PowerAction::Suspend);
+    if (logindService_->canHibernate()) actions.push_back(PowerAction::Hibernate);
+    if (logindService_->canReboot())    actions.push_back(PowerAction::Reboot);
+    if (logindService_->canPowerOff())  actions.push_back(PowerAction::ShutDown);
+    actions.push_back(PowerAction::Logout);
+
+    Output* focus = activeOutput();
+    powerMenu_->setOutput(focus ? focus->wl : nullptr, focus ? focus->scale : 1);
+    powerMenu_->show(std::move(actions));
+    // Route keyboard to the power menu while it's visible.
+    keyFocusTarget_ = [this](const KeyEvent& e) { powerMenu_->handleKey(e); };
+}
+
+void App::handlePowerAction(PowerAction action) {
+    if (lockService_ && lockService_->locked()) return;
+    keyFocusTarget_ = nullptr;
+    switch (action) {
+        case PowerAction::Lock:
+            doLock();
+            break;
+        case PowerAction::Logout:
+            if (logindService_) logindService_->logout();
+            break;
+        case PowerAction::Suspend:
+            if (logindService_) logindService_->suspend();
+            break;
+        case PowerAction::Hibernate:
+            if (logindService_) logindService_->hibernate();
+            break;
+        case PowerAction::Reboot:
+            if (logindService_) logindService_->reboot();
+            break;
+        case PowerAction::ShutDown:
+            if (logindService_) logindService_->powerOff();
+            break;
+    }
+}
+
 void App::handleCommandAction(CommandAction action) {
     switch (action) {
         case CommandAction::Lock:
-            system("loginctl lock-session");
+            doLock();
             break;
         case CommandAction::Suspend:
-            system("systemctl suspend");
+            if (logindService_) logindService_->suspend();
+            break;
+        case CommandAction::Hibernate:
+            if (logindService_) logindService_->hibernate();
+            break;
+        case CommandAction::Reboot:
+            if (logindService_) logindService_->reboot();
+            break;
+        case CommandAction::PowerOff:
+            if (logindService_) logindService_->powerOff();
             break;
         case CommandAction::Logout:
-            system("loginctl terminate-session \"\"");
+            if (logindService_) logindService_->logout();
             break;
         case CommandAction::QuitBezel:
             running_ = false;
@@ -887,6 +993,11 @@ void App::tick() {
         }
         osdOverlay_->render();
     }
+    if (powerMenu_ && powerMenu_->visible()) {
+        Output* focus = activeOutput();
+        if (focus) powerMenu_->setOutput(focus->wl, focus->scale);
+        powerMenu_->render();
+    }
     if (lockService_ && (lockService_->locked() || lockService_->authenticating())) {
         LockViewState view;
         buildLockView(view);
@@ -916,8 +1027,10 @@ void App::finish() {
     toplevelService_.reset();
     workspaceService_.reset();
     destroyLockSurfaces();
+    powerMenu_.reset();
     lockService_.reset();
     pamAuth_.reset();
+    logindService_.reset();
     if (keyboardInput_) keyboardInput_.reset();
     if (pointer_) { wl_pointer_release(pointer_); pointer_ = nullptr; }
     if (seat_)    { wl_seat_destroy(seat_); seat_ = nullptr; }

@@ -15,6 +15,7 @@
 #include "toplevel_service.hpp"
 #include "window_list.hpp"
 #include "workspace_switcher.hpp"
+#include "power_button_widget.hpp"
 #include <linux/input-event-codes.h>
 #include <nanovg.h>
 #include <wayland-client-protocol.h>
@@ -167,7 +168,21 @@ void Panel::rebuildLayout() {
     clock_ = clock.get();
     root_->addChild(std::move(clock));
 
+    if (powerButtonEnabled_) {
+        auto powerBtn = std::make_unique<PowerButtonWidget>(theme_, renderer_->ctx(), fontHandle_);
+        if (powerClickCb_)
+            powerBtn->setOnClick(powerClickCb_);
+        powerBtn->setCallback([this] { requestRedraw(); });
+        root_->addChild(std::move(powerBtn));
+    }
+
     requestRedraw();
+}
+
+void Panel::setPowerClickCallback(std::function<void()> cb) {
+    powerClickCb_ = std::move(cb);
+    powerButtonEnabled_ = (bool)powerClickCb_;
+    rebuildLayout();
 }
 
 void Panel::tick() {
